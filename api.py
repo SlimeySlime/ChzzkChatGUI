@@ -9,7 +9,7 @@ def fetch_chatChannelId(streamer: str, cookies: dict) -> str:
         response.raise_for_status()
         response = response.json()
         
-        chatChannelId = response['content']['chatChannelId']
+        chatChannelId = response['content']['chatChannelId']    # eg. N2G4yj
         assert chatChannelId!=None
         return chatChannelId
     except Exception as e:

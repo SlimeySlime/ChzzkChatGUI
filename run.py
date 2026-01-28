@@ -11,8 +11,8 @@ from cmd_type import CHZZK_CHAT_CMD
 class ChzzkChat:
 
     def __init__(self, streamer, cookies, logger):
-
-        self.streamer = streamer
+        
+        self.streamer = streamer    # streamer == streamer_id
         self.cookies  = cookies
         self.logger   = logger
 
@@ -170,8 +170,9 @@ class ChzzkChat:
 
                     now = datetime.datetime.fromtimestamp(chat_data['msgTime']/1000)
                     now = datetime.datetime.strftime(now, '%Y-%m-%d %H:%M:%S')
+                    uid = chat_data['uid']
 
-                    self.logger.info(f'[{now}][{chat_type}] {nickname} : {chat_data["msg"]}')
+                    self.logger.info(f'[{now}][{chat_type}][{uid}] {nickname} : {chat_data["msg"]}')
                 
             except:
                 pass
@@ -196,9 +197,18 @@ def get_logger():
 
 
 if __name__ == '__main__':
+    import sys
 
+    try:
+        sys.stdout.reconfigure(encoding='utf-8')
+        sys.stderr.reconfigure(encoding='utf-8')
+    except Exception:
+        import os as _os
+        _os.environ.setdefault('PYTHONIOENCODING', 'utf-8')
+        
+    # doe = https://chzzk.naver.com/live/17aa057a8248b53affe30512a91481f5
     parser = argparse.ArgumentParser()
-    parser.add_argument('--streamer_id', type=str, default='9381e7d6816e6d915a44a13c0195b202')
+    parser.add_argument('--streamer_id', type=str, default='17aa057a8248b53affe30512a91481f5')
     args = parser.parse_args()
 
     with open('cookies.json') as f:
