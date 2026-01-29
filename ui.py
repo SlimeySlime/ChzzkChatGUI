@@ -2,15 +2,15 @@ import sys
 import os
 import json
 import datetime
-import argparse
 
 from collections import defaultdict
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QTextEdit, QLabel, QDialog, QScrollArea, QGraphicsOpacityEffect
+    QTextEdit, QLabel, QDialog, QScrollArea, QGraphicsOpacityEffect,
+    QLineEdit, QPushButton, QSystemTrayIcon, QMenu
 )
 from PyQt6.QtCore import QThread, pyqtSignal, QTimer, Qt, QPropertyAnimation, QUrl
-from PyQt6.QtGui import QFont, QDesktopServices
+from PyQt6.QtGui import QFont, QDesktopServices, QIcon, QAction
 
 # 스크립트 디렉토리 기준으로 경로 설정
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -241,27 +241,75 @@ class ClickableTextEdit(QTextEdit):
 class ChzzkChatUI(QMainWindow):
     """메인 UI 윈도우"""
 
-    def __init__(self, streamer, cookies):
+    def __init__(self, cookies):
         super().__init__()
-        self.streamer = streamer
+        self.streamer = None
         self.cookies = cookies
+        self.worker = None
+        self.is_connected = False
         self.user_messages = defaultdict(list)  # uid -> [messages]
         self.user_nicknames = {}  # uid -> nickname
         self.init_ui()
-        self.start_chat_worker()
+        self.init_tray_icon()
 
     def init_ui(self):
         """UI 초기화"""
         self.setWindowTitle('Chzzk Chat')
         self.setGeometry(100, 100, 500, 600)
 
+        # 아이콘 설정
+        icon_path = os.path.join(SCRIPT_DIR, 'img', 'chzzk.png')
+        if os.path.exists(icon_path):
+            self.setWindowIcon(QIcon(icon_path))
+
         # 메인 위젯
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
         layout = QVBoxLayout(central_widget)
 
+        # 주소 입력 영역
+        connect_layout = QHBoxLayout()
+        self.url_input = QLineEdit()
+        self.url_input.setPlaceholderText('스트리머 ID 또는 치지직 채널 URL 입력')
+        self.url_input.setStyleSheet('''
+            QLineEdit {
+                background-color: #1a1a1a;
+                color: #ffffff;
+                border: 1px solid #333;
+                padding: 8px;
+                border-radius: 4px;
+            }
+            QLineEdit:focus {
+                border: 1px solid #00ff00;
+            }
+        ''')
+        self.url_input.returnPressed.connect(self.on_connect_clicked)
+        connect_layout.addWidget(self.url_input)
+
+        self.connect_btn = QPushButton('연결')
+        self.connect_btn.setStyleSheet('''
+            QPushButton {
+                background-color: #00ff00;
+                color: #000000;
+                border: none;
+                padding: 8px 20px;
+                border-radius: 4px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #00cc00;
+            }
+            QPushButton:disabled {
+                background-color: #666666;
+                color: #999999;
+            }
+        ''')
+        self.connect_btn.clicked.connect(self.on_connect_clicked)
+        connect_layout.addWidget(self.connect_btn)
+        layout.addLayout(connect_layout)
+
         # 상태 표시
-        self.status_label = QLabel('연결 대기 중...')
+        self.status_label = QLabel('스트리머 주소를 입력하고 연결 버튼을 눌러주세요')
         self.status_label.setStyleSheet('color: gray; padding: 5px;')
         layout.addWidget(self.status_label)
 
@@ -270,6 +318,7 @@ class ChzzkChatUI(QMainWindow):
         chat_container_layout = QVBoxLayout(chat_container)
         chat_container_layout.setContentsMargins(0, 0, 0, 0)
 
+        # 유저 chat은 ClickableTextEdit 사용
         self.chat_display = ClickableTextEdit()
         self.chat_display.setReadOnly(True)
         self.chat_display.setFont(QFont('맑은 고딕', 10))
@@ -319,6 +368,114 @@ class ChzzkChatUI(QMainWindow):
                 color: #cccccc;
             }
         ''')
+
+    def init_tray_icon(self):
+        """시스템 트레이 아이콘 초기화"""
+        icon_path = os.path.join(SCRIPT_DIR, 'img', 'chzzk.png')
+        if not os.path.exists(icon_path):
+            return
+
+        self.tray_icon = QSystemTrayIcon(QIcon(icon_path), self)
+
+        # 트레이 메뉴
+        tray_menu = QMenu()
+        show_action = QAction('열기', self)
+        show_action.triggered.connect(self.show_window)
+        tray_menu.addAction(show_action)
+
+        quit_action = QAction('종료', self)
+        quit_action.triggered.connect(self.quit_app)
+        tray_menu.addAction(quit_action)
+
+        self.tray_icon.setContextMenu(tray_menu)
+        self.tray_icon.activated.connect(self.on_tray_activated)
+        self.tray_icon.show()
+
+    def show_window(self):
+        """창 표시"""
+        self.show()
+        self.activateWindow()
+
+    def quit_app(self):
+        """앱 종료"""
+        if self.worker:
+            self.worker.stop()
+            self.worker.wait()
+        if hasattr(self, 'tray_icon'):
+            self.tray_icon.hide()
+        QApplication.quit()
+
+    def on_tray_activated(self, reason):
+        """트레이 아이콘 클릭 시"""
+        if reason == QSystemTrayIcon.ActivationReason.Trigger:
+            self.show_window()
+
+    def extract_streamer_id(self, url_or_id):
+        """URL에서 스트리머 ID 추출"""
+        url_or_id = url_or_id.strip()
+        # chzzk.naver.com/채널ID 형태의 URL 처리
+        if 'chzzk.naver.com/' in url_or_id:
+            # URL에서 채널 ID 부분 추출
+            parts = url_or_id.split('chzzk.naver.com/')
+            if len(parts) > 1:
+                channel_part = parts[1].split('/')[0].split('?')[0]
+                return channel_part
+        return url_or_id
+
+    def on_connect_clicked(self):
+        """연결/연결 해제 버튼 클릭 시"""
+        if self.is_connected:
+            self.disconnect_chat()
+        else:
+            self.connect_chat()
+
+    def connect_chat(self):
+        """채팅 연결"""
+        url_or_id = self.url_input.text().strip()
+        if not url_or_id:
+            self.status_label.setText('스트리머 주소를 입력해주세요')
+            self.status_label.setStyleSheet('color: #ff0000; padding: 5px;')
+            return
+
+        # 기존 워커가 있으면 정리
+        if self.worker:
+            self.worker.stop()
+            self.worker.wait()
+
+        self.streamer = self.extract_streamer_id(url_or_id)
+        self.connect_btn.setEnabled(False)
+        self.url_input.setEnabled(False)
+        self.start_chat_worker()
+
+    def disconnect_chat(self):
+        """채팅 연결 해제"""
+        if self.worker:
+            self.worker.stop()
+            self.worker.wait()
+            self.worker = None
+
+        self.is_connected = False
+        self.connect_btn.setText('연결')
+        self.connect_btn.setStyleSheet('''
+            QPushButton {
+                background-color: #00ff00;
+                color: #000000;
+                border: none;
+                padding: 8px 20px;
+                border-radius: 4px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #00cc00;
+            }
+            QPushButton:disabled {
+                background-color: #666666;
+                color: #999999;
+            }
+        ''')
+        self.url_input.setEnabled(True)
+        self.status_label.setText('연결이 해제되었습니다. 다른 스트리머에 연결할 수 있습니다.')
+        self.status_label.setStyleSheet('color: gray; padding: 5px;')
 
     def start_chat_worker(self):
         """채팅 워커 스레드 시작
@@ -379,7 +536,6 @@ class ChzzkChatUI(QMainWindow):
         self.update_overlay_position()
         self.overlay_opacity.setOpacity(0.9)
         self.latest_chat_overlay.show()
-
         # 5초 후 자동 숨김
         self.overlay_timer.start(5000)
 
@@ -419,23 +575,52 @@ class ChzzkChatUI(QMainWindow):
         self.status_label.setText(status)
         if '완료' in status:
             self.status_label.setStyleSheet('color: #00ff00; padding: 5px;')
+            self.is_connected = True
+            self.connect_btn.setText('연결 해제')
+            self.connect_btn.setStyleSheet('''
+                QPushButton {
+                    background-color: #ff6666;
+                    color: #ffffff;
+                    border: none;
+                    padding: 8px 20px;
+                    border-radius: 4px;
+                    font-weight: bold;
+                }
+                QPushButton:hover {
+                    background-color: #ff4444;
+                }
+            ''')
+            self.connect_btn.setEnabled(True)
         elif '실패' in status:
             self.status_label.setStyleSheet('color: #ff0000; padding: 5px;')
+            self.is_connected = False
+            self.connect_btn.setText('연결')
+            self.connect_btn.setEnabled(True)
+            self.url_input.setEnabled(True)
         else:
             self.status_label.setStyleSheet('color: #ffcc00; padding: 5px;')
 
     def closeEvent(self, event):
-        """윈도우 종료 시 워커 정리"""
-        self.worker.stop()
-        self.worker.wait()
-        event.accept()
+        """윈도우 X 버튼 클릭 시 트레이로 최소화"""
+        if hasattr(self, 'tray_icon') and self.tray_icon.isVisible():
+            event.ignore()
+            self.hide()
+            # show message 기능은 없앨거임
+            # self.tray_icon.showMessage(
+            #     'Chzzk Chat',
+            #     '트레이에서 실행 중입니다. 종료하려면 트레이 아이콘을 우클릭하세요.',
+            #     QSystemTrayIcon.MessageIcon.Information,
+            #     2000
+            # )
+        else:
+            # 트레이 아이콘이 없으면 앱 종료
+            if self.worker:
+                self.worker.stop()
+                self.worker.wait()
+            event.accept()
 
 
 def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--streamer_id', type=str, default='17aa057a8248b53affe30512a91481f5')
-    args = parser.parse_args()
-
     cookies_path = os.path.join(SCRIPT_DIR, 'cookies.json')
     with open(cookies_path) as f:
         cookies = json.load(f)
@@ -443,7 +628,12 @@ def main():
     app = QApplication(sys.argv)
     app.setStyle('Fusion')
 
-    window = ChzzkChatUI(args.streamer_id, cookies)
+    # 앱 전체 아이콘 설정
+    icon_path = os.path.join(SCRIPT_DIR, 'img', 'chzzk.png')
+    if os.path.exists(icon_path):
+        app.setWindowIcon(QIcon(icon_path))
+
+    window = ChzzkChatUI(cookies)
     window.show()
 
     sys.exit(app.exec())

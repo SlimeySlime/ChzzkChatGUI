@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python:*)",
+      "Bash(.venvScriptspython.exe ui.py)",
+      "Bash(D:/Frogs/ChzzkChatGUI/.venv/Scripts/python.exe:*)",
+      "Bash(D:/Frogs/ChzzkChatGUI/.venv/Scripts/pip.exe show:*)",
+      "Bash(where:*)",
+      "Bash(D:/Frogs/ChzzkChatGUI/.venv/Scripts/pip.exe install:*)",
+      "Bash(echo:*)",
+      "Bash(powershell -Command \"[Environment]::GetEnvironmentVariable\\(''Path'', ''Machine''\\)\")",
+      "Bash(D:/anaconda3/python.exe:*)",
+      "Bash(D:/anaconda3/Scripts/conda.exe search python)"
+    ]
+  }
+}

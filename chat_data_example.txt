@@ -1,0 +1,25 @@
+{
+    "svcid": "game",
+    "ver": "1",
+    "bdy": [
+        {
+            "svcid": "game",
+            "cid": "N2GB1p",
+            "mbrCnt": 773,
+            "uid": "b38a0ef2879dd48c370e3f381e274c44",
+            "profile": "{\"userIdHash\":\"b38a0ef2879dd48c370e3f381e274c44\",\"nickname\":\"알리체\",\"profileImageUrl\":\"\",\"userRoleCode\":\"common_user\",\"badge\":null,\"title\":null,\"verifiedMark\":false,\"activityBadges\":[],\"streamingProperty\":{\"nicknameColor\":{\"colorCode\":\"CC000\"},\"activatedAchievementBadgeIds\":[]},\"viewerBadges\":[]}",
+            "msg": "헉",
+            "msgTypeCode": 1,
+            "msgStatusType": "NORMAL",
+            "extras": "{\"chatType\":\"STREAMING\",\"osType\":\"PC\",\"extraToken\":\"N6R23SytO9UNEYzvmJjdoQwpE1jR0A6s5++T4CVmjTUY68+GdatiSEDp27zCWDMmvOt/borCP0pAPLQ23LRxRw==\",\"streamingChannelId\":\"f00f6d46ecc6d735b96ecf376b9e5212\",\"emojis\":{}}",
+            "ctime": 1769675073750,
+            "utime": 1769675073750,
+            "msgTid": null,
+            "cuid": null,
+            "msgTime": 1769675073750
+        }
+    ],
+    "cmd": 93101,
+    "tid": "4",
+    "cid": "N2GB1p"
+}
