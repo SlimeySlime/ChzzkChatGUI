@@ -2,6 +2,10 @@ import sys
 import os
 import json
 import datetime
+import logging
+import hashlib
+import requests
+from logging.handlers import TimedRotatingFileHandler
 
 from collections import defaultdict
 from PyQt6.QtWidgets import (
@@ -116,12 +120,31 @@ class ChatWorker(QThread):
                     continue
 
                 for chat_data in raw_message['bdy']:
+                    color_code = None
+                    badges = []
                     if chat_data['uid'] == 'anonymous':
                         nickname = '익명의 후원자'
                     else:
                         try:
                             profile_data = json.loads(chat_data['profile'])
                             nickname = profile_data["nickname"]
+                            # colorCode 추출
+                            streaming_prop = profile_data.get('streamingProperty', {})
+                            nickname_color = streaming_prop.get('nicknameColor', {})
+                            color_code = nickname_color.get('colorCode')
+
+                            # 배지 추출
+                            # 1. 구독 배지
+                            subscription = streaming_prop.get('subscription', {})
+                            sub_badge = subscription.get('badge', {})
+                            if sub_badge.get('imageUrl'):
+                                badges.append(sub_badge['imageUrl'])
+
+                            # 2. 활동 배지
+                            for badge in profile_data.get('activityBadges', []):
+                                if badge.get('imageUrl') and badge.get('activated'):
+                                    badges.append(badge['imageUrl'])
+
                             if 'msg' not in chat_data:
                                 continue
                         except:
@@ -129,14 +152,16 @@ class ChatWorker(QThread):
 
                     msg_time = datetime.datetime.fromtimestamp(chat_data['msgTime']/1000)
                     msg_time_str = msg_time.strftime('%H:%M:%S')
-                    
+
                     # necessary emit info to main thread
                     self.chat_received.emit({
                         'time': msg_time_str,
                         'type': chat_type,
                         'uid': chat_data['uid'],
                         'nickname': nickname,
-                        'message': chat_data['msg']
+                        'message': chat_data['msg'],
+                        'colorCode': color_code,
+                        'badges': badges
                     })
 
             except Exception as e:
@@ -195,6 +220,7 @@ class UserChatDialog(QDialog):
         ''')
 
         chat_widget = QWidget()
+        chat_widget.setStyleSheet('background-color: #1a1a1a;')
         chat_layout = QVBoxLayout(chat_widget)
         chat_layout.setSpacing(2)
 
@@ -241,6 +267,77 @@ class ClickableTextEdit(QTextEdit):
 class ChzzkChatUI(QMainWindow):
     """메인 UI 윈도우"""
 
+    # 치지직 colorCode 매핑 테이블 (치트키 사용자용)
+    COLOR_CODE_MAP = {
+        'SG001': '#8bff00',  # 연두
+        'SG002': '#00ffff',  # 시안
+        'SG003': '#ff00ff',  # 마젠타
+        'SG004': '#ffff00',  # 노랑
+        'SG005': '#ff8800',  # 주황
+        'SG006': '#ff0088',  # 핑크
+        'SG007': '#00aaff',  # 파랑
+        'SG008': '#aa00ff',  # 보라
+        'SG009': '#ff0000',  # 빨강
+    }
+
+    # 일반 유저(CC000)용 색상 팔레트
+    USER_COLOR_PALETTE = [
+        '#00ffa3',  # 민트
+        '#ff9966',  # 주황
+        '#66ccff',  # 하늘
+        '#cc99ff',  # 보라
+        '#ff6699',  # 핑크
+        '#99ff99',  # 연두
+        '#ffcc66',  # 골드
+        '#66ffcc',  # 청록
+        '#ff6666',  # 빨강
+        '#99ccff',  # 파랑
+        '#ffff66',  # 노랑
+        '#ff99cc',  # 연핑크
+    ]
+
+    def get_user_color(self, uid, color_code):
+        """uid와 colorCode 기반으로 닉네임 색상 반환"""
+        # 치트키 색상(SG0~)이 있으면 해당 색상 사용
+        if color_code and color_code in self.COLOR_CODE_MAP:
+            return self.COLOR_CODE_MAP[color_code]
+        # CC000이거나 없으면 uid 해시 기반 팔레트 색상
+        hash_value = hash(uid)
+        color_index = abs(hash_value) % len(self.USER_COLOR_PALETTE)
+        return self.USER_COLOR_PALETTE[color_index]
+
+    def get_badge_path(self, url):
+        """배지 이미지 URL을 로컬 캐시 경로로 변환 (필요시 다운로드)"""
+        if not url:
+            return None
+
+        # 캐시에 있으면 바로 반환
+        if url in self.badge_cache:
+            return self.badge_cache[url]
+
+        try:
+            # URL 해시로 파일명 생성
+            url_hash = hashlib.md5(url.encode()).hexdigest()
+            ext = os.path.splitext(url)[1] or '.png'
+            local_path = os.path.join(self.badge_cache_dir, f'{url_hash}{ext}')
+
+            # 이미 다운로드되어 있으면 캐시에 등록
+            if os.path.exists(local_path):
+                self.badge_cache[url] = local_path
+                return local_path
+
+            # 다운로드
+            response = requests.get(url, timeout=5)
+            if response.status_code == 200:
+                with open(local_path, 'wb') as f:
+                    f.write(response.content)
+                self.badge_cache[url] = local_path
+                return local_path
+        except:
+            pass
+
+        return None
+
     def __init__(self, cookies):
         super().__init__()
         self.streamer = None
@@ -249,6 +346,10 @@ class ChzzkChatUI(QMainWindow):
         self.is_connected = False
         self.user_messages = defaultdict(list)  # uid -> [messages]
         self.user_nicknames = {}  # uid -> nickname
+        self.chat_logger = None  # 채팅 로거
+        self.badge_cache = {}  # 배지 이미지 캐시 (url -> local_path)
+        self.badge_cache_dir = os.path.join(SCRIPT_DIR, 'cache', 'badges')
+        os.makedirs(self.badge_cache_dir, exist_ok=True)
         self.init_ui()
         self.init_tray_icon()
 
@@ -262,6 +363,43 @@ class ChzzkChatUI(QMainWindow):
         if os.path.exists(icon_path):
             self.setWindowIcon(QIcon(icon_path))
 
+        # 메뉴바 설정
+        menubar = self.menuBar()
+        menubar.setStyleSheet('''
+            QMenuBar {
+                background-color: #2b2b2b;
+                color: #cccccc;
+            }
+            QMenuBar::item:selected {
+                background-color: #3d3d3d;
+            }
+            QMenu {
+                background-color: #2b2b2b;
+                color: #cccccc;
+            }
+            QMenu::item:selected {
+                background-color: #3d3d3d;
+            }
+        ''')
+
+        # 옵션 메뉴
+        option_menu = menubar.addMenu('옵션')
+
+        quit_action = QAction('종료', self)
+        quit_action.triggered.connect(self.quit_app)
+        option_menu.addAction(quit_action)
+
+        # 설정 메뉴 (placeholder)
+        setting_menu = menubar.addMenu('설정')
+        setting_placeholder = QAction('설정 (준비 중)', self)
+        setting_placeholder.setEnabled(False)
+        setting_menu.addAction(setting_placeholder)
+
+        # 트레이로 버튼 (메뉴바에 직접 배치)
+        tray_action = QAction('트레이로', self)
+        tray_action.triggered.connect(self.minimize_to_tray)
+        menubar.addAction(tray_action)
+
         # 메인 위젯
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
@@ -269,8 +407,13 @@ class ChzzkChatUI(QMainWindow):
 
         # 주소 입력 영역
         connect_layout = QHBoxLayout()
+
+        uid_label = QLabel('스트리머 UID')
+        uid_label.setStyleSheet('color: #aaaaaa; padding: 0 5px;')
+        connect_layout.addWidget(uid_label)
+
         self.url_input = QLineEdit()
-        self.url_input.setPlaceholderText('스트리머 ID 또는 치지직 채널 URL 입력')
+        self.url_input.setPlaceholderText('예: 17aa057a8248b53affe30512a91481f5')
         self.url_input.setStyleSheet('''
             QLineEdit {
                 background-color: #1a1a1a;
@@ -396,6 +539,11 @@ class ChzzkChatUI(QMainWindow):
         self.show()
         self.activateWindow()
 
+    def minimize_to_tray(self):
+        """트레이로 최소화"""
+        if hasattr(self, 'tray_icon'):
+            self.hide()
+
     def quit_app(self):
         """앱 종료"""
         if self.worker:
@@ -404,6 +552,45 @@ class ChzzkChatUI(QMainWindow):
         if hasattr(self, 'tray_icon'):
             self.tray_icon.hide()
         QApplication.quit()
+
+    def setup_logger(self, channel_name):
+        """채팅 로거 설정 (날짜별 자동 로테이션)"""
+        # 기존 로거 정리
+        if self.chat_logger:
+            for handler in self.chat_logger.handlers[:]:
+                handler.close()
+                self.chat_logger.removeHandler(handler)
+
+        # log/{channel_name}/ 디렉토리 생성
+        log_dir = os.path.join(SCRIPT_DIR, 'log', channel_name)
+        os.makedirs(log_dir, exist_ok=True)
+
+        # 로거 생성
+        logger_name = f'chzzk_chat_{channel_name}'
+        self.chat_logger = logging.getLogger(logger_name)
+        self.chat_logger.setLevel(logging.INFO)
+        self.chat_logger.handlers.clear()
+
+        # 날짜별 로테이션 핸들러 (자정에 새 파일 생성)
+        log_path = os.path.join(log_dir, 'chat.log')
+        handler = TimedRotatingFileHandler(
+            log_path,
+            when='midnight',
+            interval=1,
+            backupCount=30,  # 30일치 보관
+            encoding='utf-8'
+        )
+        handler.suffix = '%Y-%m-%d.log'
+        handler.setFormatter(logging.Formatter('%(message)s'))
+        self.chat_logger.addHandler(handler)
+
+        # 시작 로그
+        self.chat_logger.info(f'\n=== 채팅 수집 시작: {datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")} ===')
+
+    def log_chat(self, time_str, chat_type, nickname, uid, message):
+        """채팅 로그 기록"""
+        if self.chat_logger:
+            self.chat_logger.info(f'[{time_str}][{chat_type}][{uid}] {nickname}: {message}')
 
     def on_tray_activated(self, reason):
         """트레이 아이콘 클릭 시"""
@@ -493,6 +680,8 @@ class ChzzkChatUI(QMainWindow):
         nickname = chat_data['nickname']
         message = chat_data['message']
         uid = chat_data['uid']
+        color_code = chat_data.get('colorCode')
+        badges = chat_data.get('badges', [])
 
         # 사용자별 메시지 저장
         self.user_messages[uid].append({
@@ -502,17 +691,27 @@ class ChzzkChatUI(QMainWindow):
         })
         self.user_nicknames[uid] = nickname
 
-        # 후원은 다른 색상으로 표시
+        # 채팅 로그 기록
+        self.log_chat(time_str, chat_type, nickname, uid, message)
+
+        # 닉네임 색상 결정
         if chat_type == '후원':
             color = '#ffcc00'
             prefix = '[후원] '
         else:
-            color = '#00ff00'
+            color = self.get_user_color(uid, color_code)
             prefix = ''
+
+        # 배지 HTML 생성
+        badge_html = ''
+        for badge_url in badges[:3]:  # 최대 3개 배지만 표시
+            badge_path = self.get_badge_path(badge_url)
+            if badge_path:
+                badge_html += f'<img src="file:///{badge_path.replace(os.sep, "/")}" width="18" height="18" style="vertical-align: middle;"/> '
 
         # HTML 형식으로 채팅 추가 (닉네임 클릭 가능)
         html = f'''<span style="color: #888888;">[{time_str}]</span>
-        <a href="user:{uid}" style="color: {color}; text-decoration: none;">{prefix}<b>{nickname}</b></a>
+        {badge_html}<a href="user:{uid}" style="color: {color}; text-decoration: none;">{prefix}<b>{nickname}</b></a>
         <span style="color: #666666;"> ({uid[:8]}...)</span>:
         <span style="color: #ffffff;">{message}</span>'''
 
@@ -591,6 +790,9 @@ class ChzzkChatUI(QMainWindow):
                 }
             ''')
             self.connect_btn.setEnabled(True)
+            # 채팅 로그 시작
+            if self.worker and hasattr(self.worker, 'channelName'):
+                self.setup_logger(self.worker.channelName)
         elif '실패' in status:
             self.status_label.setStyleSheet('color: #ff0000; padding: 5px;')
             self.is_connected = False
@@ -601,23 +803,13 @@ class ChzzkChatUI(QMainWindow):
             self.status_label.setStyleSheet('color: #ffcc00; padding: 5px;')
 
     def closeEvent(self, event):
-        """윈도우 X 버튼 클릭 시 트레이로 최소화"""
-        if hasattr(self, 'tray_icon') and self.tray_icon.isVisible():
-            event.ignore()
-            self.hide()
-            # show message 기능은 없앨거임
-            # self.tray_icon.showMessage(
-            #     'Chzzk Chat',
-            #     '트레이에서 실행 중입니다. 종료하려면 트레이 아이콘을 우클릭하세요.',
-            #     QSystemTrayIcon.MessageIcon.Information,
-            #     2000
-            # )
-        else:
-            # 트레이 아이콘이 없으면 앱 종료
-            if self.worker:
-                self.worker.stop()
-                self.worker.wait()
-            event.accept()
+        """윈도우 X 버튼 클릭 시 앱 종료"""
+        if self.worker:
+            self.worker.stop()
+            self.worker.wait()
+        if hasattr(self, 'tray_icon'):
+            self.tray_icon.hide()
+        event.accept()
 
 
 def main():

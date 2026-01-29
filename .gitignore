@@ -1,4 +1,7 @@
 __pycache__
 .venv
+CLAUDE.*
+cache/
+log/
 
 chat.log
