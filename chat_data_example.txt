@@ -92,3 +92,34 @@
     "tid": "179",
     "cid": "N2GB1p"
 }
+# emoji
+{
+    "svcid": "game",
+    "ver": "1",
+    "bdy": [
+        {
+            "svcid": "game",
+            "cid": "N2GEoA",
+            "mbrCnt": 987,
+            "uid": "c0e263b29bc085f84d7b544bd6c15593",
+            "profile": "{\"userIdHash\":\"c0e263b29bc085f84d7b544bd6c15593\",\"nickname\":\"케이프 혼\",\"profileImageUrl\":\"\",\"userRoleCode\":\"common_user\",\"badge\":null,\"title\":null,\"verifiedMark\":false,\"activityBadges\":[],\"streamingProperty\":{\"subscription\":{\"accumulativeMonth\":2,\"tier\":1,\"badge\":{\"imageUrl\":\"https://nng-phinf.pstatic.net/glive/subscription/badge/a9a343510e132ea3026ff3cf682820b5/1/2.png\"}},\"nicknameColor\":{\"colorCode\":\"CC000\"},\"activatedAchievementBadgeIds\":[]},\"viewerBadges\":[]}",
+            "msg": "{:d_44:}{:d_44:}",
+            "msgTypeCode": 1,
+            "msgStatusType": "NORMAL",
+            "extras": 
+                "{\"chatType\":\"STREAMING\",
+                \"osType\":\"PC\",
+                \"extraToken\":\"m9QUtLG80qg+LMiN7ekeQ0cmDC/+RVV4ng1l1r0TDYYhwISHKzNHcbGJJFqZHDkwdMN+rpTFfuUEKsdFJsd8Hw==\",
+                \"streamingChannelId\":\"a9a343510e132ea3026ff3cf682820b5\",
+                \"emojis\":{\"d_44\":\"https://ssl.pstatic.net/static/nng/glive/icon/b_04.gif\"}}",
+            "ctime": 1769681693264,
+            "utime": 1769681693264,
+            "msgTid": null,
+            "cuid": null,
+            "msgTime": 1769681693264
+        }
+    ],
+    "cmd": 93101,
+    "tid": "72",
+    "cid": "N2GEoA"
+}

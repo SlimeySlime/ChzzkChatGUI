@@ -4,14 +4,16 @@ import json
 import datetime
 import logging
 import hashlib
+import re
 import requests
-from logging.handlers import TimedRotatingFileHandler
+# TimedRotatingFileHandler 제거 - 직접 날짜별 파일명 사용
 
 from collections import defaultdict
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QTextEdit, QLabel, QDialog, QScrollArea, QGraphicsOpacityEffect,
-    QLineEdit, QPushButton, QSystemTrayIcon, QMenu
+    QLineEdit, QPushButton, QSystemTrayIcon, QMenu, QSpinBox, QFormLayout,
+    QDialogButtonBox
 )
 from PyQt6.QtCore import QThread, pyqtSignal, QTimer, Qt, QPropertyAnimation, QUrl
 from PyQt6.QtGui import QFont, QDesktopServices, QIcon, QAction
@@ -153,6 +155,15 @@ class ChatWorker(QThread):
                     msg_time = datetime.datetime.fromtimestamp(chat_data['msgTime']/1000)
                     msg_time_str = msg_time.strftime('%H:%M:%S')
 
+                    # 이모지 정보 추출
+                    emojis = {}
+                    try:
+                        if 'extras' in chat_data and chat_data['extras']:
+                            extras = json.loads(chat_data['extras'])
+                            emojis = extras.get('emojis', {})
+                    except:
+                        pass
+
                     # necessary emit info to main thread
                     self.chat_received.emit({
                         'time': msg_time_str,
@@ -161,7 +172,8 @@ class ChatWorker(QThread):
                         'nickname': nickname,
                         'message': chat_data['msg'],
                         'colorCode': color_code,
-                        'badges': badges
+                        'badges': badges,
+                        'emojis': emojis
                     })
 
             except Exception as e:
@@ -175,6 +187,74 @@ class ChatWorker(QThread):
         self.running = False
         if self.sock:
             self.sock.close()
+
+
+class SettingsDialog(QDialog):
+    """설정 다이얼로그"""
+
+    def __init__(self, settings, parent=None):
+        super().__init__(parent)
+        self.settings = settings.copy()
+        self.init_ui()
+
+    def init_ui(self):
+        self.setWindowTitle('설정')
+        self.setFixedSize(300, 150)
+        self.setStyleSheet('''
+            QDialog {
+                background-color: #2b2b2b;
+            }
+            QLabel {
+                color: #cccccc;
+            }
+            QSpinBox {
+                background-color: #1a1a1a;
+                color: #ffffff;
+                border: 1px solid #333;
+                padding: 5px;
+                border-radius: 4px;
+            }
+        ''')
+
+        layout = QVBoxLayout(self)
+
+        # 폰트 크기 설정
+        form_layout = QFormLayout()
+
+        self.font_size_spin = QSpinBox()
+        self.font_size_spin.setRange(8, 24)
+        self.font_size_spin.setValue(self.settings.get('font_size', 10))
+        self.font_size_spin.setSuffix(' pt')
+        form_layout.addRow('채팅 폰트 크기:', self.font_size_spin)
+
+        layout.addLayout(form_layout)
+        layout.addStretch()
+
+        # 버튼
+        button_box = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        button_box.setStyleSheet('''
+            QPushButton {
+                background-color: #3d3d3d;
+                color: #cccccc;
+                border: none;
+                padding: 8px 16px;
+                border-radius: 4px;
+            }
+            QPushButton:hover {
+                background-color: #4d4d4d;
+            }
+        ''')
+        button_box.accepted.connect(self.accept)
+        button_box.rejected.connect(self.reject)
+        layout.addWidget(button_box)
+
+    def get_settings(self):
+        """변경된 설정 반환"""
+        return {
+            'font_size': self.font_size_spin.value()
+        }
 
 
 class UserChatDialog(QDialog):
@@ -338,6 +418,63 @@ class ChzzkChatUI(QMainWindow):
 
         return None
 
+    def get_emoji_path(self, url):
+        """이모지 이미지 URL을 로컬 캐시 경로로 변환 (필요시 다운로드)"""
+        if not url:
+            return None
+
+        # 캐시에 있으면 바로 반환
+        if url in self.emoji_cache:
+            return self.emoji_cache[url]
+
+        try:
+            # URL 해시로 파일명 생성
+            url_hash = hashlib.md5(url.encode()).hexdigest()
+            # URL에서 확장자 추출 (gif, png 등)
+            if '.gif' in url:
+                ext = '.gif'
+            elif '.png' in url:
+                ext = '.png'
+            else:
+                ext = '.png'
+            local_path = os.path.join(self.emoji_cache_dir, f'{url_hash}{ext}')
+
+            # 이미 다운로드되어 있으면 캐시에 등록
+            if os.path.exists(local_path):
+                self.emoji_cache[url] = local_path
+                return local_path
+
+            # 다운로드
+            response = requests.get(url, timeout=5)
+            if response.status_code == 200:
+                with open(local_path, 'wb') as f:
+                    f.write(response.content)
+                self.emoji_cache[url] = local_path
+                return local_path
+        except:
+            pass
+
+        return None
+
+    def process_message_emojis(self, message, emojis):
+        """메시지 내 이모지 코드를 이미지 HTML로 치환"""
+        if not emojis:
+            return message
+
+        # {:emojiName:} 패턴 찾기
+        pattern = r'\{:([^:]+):\}'
+
+        def replace_emoji(match):
+            emoji_name = match.group(1)
+            if emoji_name in emojis:
+                emoji_url = emojis[emoji_name]
+                emoji_path = self.get_emoji_path(emoji_url)
+                if emoji_path:
+                    return f'<img src="file:///{emoji_path.replace(os.sep, "/")}" width="20" height="20" style="vertical-align: middle;"/>'
+            return match.group(0)  # 매칭 안되면 원본 유지
+
+        return re.sub(pattern, replace_emoji, message)
+
     def __init__(self, cookies):
         super().__init__()
         self.streamer = None
@@ -347,11 +484,37 @@ class ChzzkChatUI(QMainWindow):
         self.user_messages = defaultdict(list)  # uid -> [messages]
         self.user_nicknames = {}  # uid -> nickname
         self.chat_logger = None  # 채팅 로거
+        self.log_channel_name = None  # 현재 로깅 중인 채널명
+        self.current_log_date = None  # 현재 로그 파일 날짜
         self.badge_cache = {}  # 배지 이미지 캐시 (url -> local_path)
         self.badge_cache_dir = os.path.join(SCRIPT_DIR, 'cache', 'badges')
         os.makedirs(self.badge_cache_dir, exist_ok=True)
+        self.emoji_cache = {}  # 이모지 이미지 캐시 (url -> local_path)
+        self.emoji_cache_dir = os.path.join(SCRIPT_DIR, 'cache', 'emojis')
+        os.makedirs(self.emoji_cache_dir, exist_ok=True)
+        self.settings_path = os.path.join(SCRIPT_DIR, 'settings.json')
+        self.settings = self.load_settings()
         self.init_ui()
         self.init_tray_icon()
+
+    def load_settings(self):
+        """설정 파일 로드"""
+        default_settings = {'font_size': 10}
+        try:
+            if os.path.exists(self.settings_path):
+                with open(self.settings_path, 'r', encoding='utf-8') as f:
+                    return {**default_settings, **json.load(f)}
+        except:
+            pass
+        return default_settings
+
+    def save_settings(self):
+        """설정 파일 저장"""
+        try:
+            with open(self.settings_path, 'w', encoding='utf-8') as f:
+                json.dump(self.settings, f, ensure_ascii=False, indent=2)
+        except:
+            pass
 
     def init_ui(self):
         """UI 초기화"""
@@ -389,11 +552,11 @@ class ChzzkChatUI(QMainWindow):
         quit_action.triggered.connect(self.quit_app)
         option_menu.addAction(quit_action)
 
-        # 설정 메뉴 (placeholder)
+        # 설정 메뉴
         setting_menu = menubar.addMenu('설정')
-        setting_placeholder = QAction('설정 (준비 중)', self)
-        setting_placeholder.setEnabled(False)
-        setting_menu.addAction(setting_placeholder)
+        setting_action = QAction('설정 열기', self)
+        setting_action.triggered.connect(self.open_settings)
+        setting_menu.addAction(setting_action)
 
         # 트레이로 버튼 (메뉴바에 직접 배치)
         tray_action = QAction('트레이로', self)
@@ -464,7 +627,7 @@ class ChzzkChatUI(QMainWindow):
         # 유저 chat은 ClickableTextEdit 사용
         self.chat_display = ClickableTextEdit()
         self.chat_display.setReadOnly(True)
-        self.chat_display.setFont(QFont('맑은 고딕', 10))
+        self.chat_display.setFont(QFont('맑은 고딕', self.settings.get('font_size', 10)))
         self.chat_display.setStyleSheet('''
             QTextEdit {
                 background-color: #1a1a1a;
@@ -553,43 +716,63 @@ class ChzzkChatUI(QMainWindow):
             self.tray_icon.hide()
         QApplication.quit()
 
+    def open_settings(self):
+        """설정 다이얼로그 열기"""
+        dialog = SettingsDialog(self.settings, self)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            self.settings = dialog.get_settings()
+            self.save_settings()
+            self.apply_settings()
+
+    def apply_settings(self):
+        """설정 적용"""
+        font_size = self.settings.get('font_size', 10)
+        self.chat_display.setFont(QFont('맑은 고딕', font_size))
+
     def setup_logger(self, channel_name):
-        """채팅 로거 설정 (날짜별 자동 로테이션)"""
-        # 기존 로거 정리
+        """채팅 로거 설정 (날짜별 파일)"""
+        self.log_channel_name = channel_name
+        self.current_log_date = None  # 강제로 핸들러 생성
+        self._update_log_handler()
+
+        # 시작 로그
+        self.chat_logger.info(f'\n=== 채팅 수집 시작: {datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")} ===')
+
+    def _update_log_handler(self):
+        """현재 날짜에 맞는 로그 핸들러로 업데이트"""
+        today = datetime.date.today()
+        if self.current_log_date == today:
+            return  # 같은 날짜면 업데이트 불필요
+
+        # 기존 핸들러 정리
         if self.chat_logger:
             for handler in self.chat_logger.handlers[:]:
                 handler.close()
                 self.chat_logger.removeHandler(handler)
 
         # log/{channel_name}/ 디렉토리 생성
-        log_dir = os.path.join(SCRIPT_DIR, 'log', channel_name)
+        log_dir = os.path.join(SCRIPT_DIR, 'log', self.log_channel_name)
         os.makedirs(log_dir, exist_ok=True)
 
+        # 오늘 날짜로 파일명 생성
+        log_path = os.path.join(log_dir, f'{today.strftime("%Y-%m-%d")}.log')
+
         # 로거 생성
-        logger_name = f'chzzk_chat_{channel_name}'
+        logger_name = f'chzzk_chat_{self.log_channel_name}'
         self.chat_logger = logging.getLogger(logger_name)
         self.chat_logger.setLevel(logging.INFO)
         self.chat_logger.handlers.clear()
 
-        # 날짜별 로테이션 핸들러 (자정에 새 파일 생성)
-        log_path = os.path.join(log_dir, 'chat.log')
-        handler = TimedRotatingFileHandler(
-            log_path,
-            when='midnight',
-            interval=1,
-            backupCount=30,  # 30일치 보관
-            encoding='utf-8'
-        )
-        handler.suffix = '%Y-%m-%d.log'
+        handler = logging.FileHandler(log_path, encoding='utf-8')
         handler.setFormatter(logging.Formatter('%(message)s'))
         self.chat_logger.addHandler(handler)
 
-        # 시작 로그
-        self.chat_logger.info(f'\n=== 채팅 수집 시작: {datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")} ===')
+        self.current_log_date = today
 
     def log_chat(self, time_str, chat_type, nickname, uid, message):
         """채팅 로그 기록"""
         if self.chat_logger:
+            self._update_log_handler()  # 날짜 변경 체크
             self.chat_logger.info(f'[{time_str}][{chat_type}][{uid}] {nickname}: {message}')
 
     def on_tray_activated(self, reason):
@@ -682,6 +865,7 @@ class ChzzkChatUI(QMainWindow):
         uid = chat_data['uid']
         color_code = chat_data.get('colorCode')
         badges = chat_data.get('badges', [])
+        emojis = chat_data.get('emojis', {})
 
         # 사용자별 메시지 저장
         self.user_messages[uid].append({
@@ -709,11 +893,14 @@ class ChzzkChatUI(QMainWindow):
             if badge_path:
                 badge_html += f'<img src="file:///{badge_path.replace(os.sep, "/")}" width="18" height="18" style="vertical-align: middle;"/> '
 
+        # 이모지 처리
+        display_message = self.process_message_emojis(message, emojis)
+
         # HTML 형식으로 채팅 추가 (닉네임 클릭 가능)
         html = f'''<span style="color: #888888;">[{time_str}]</span>
         {badge_html}<a href="user:{uid}" style="color: {color}; text-decoration: none;">{prefix}<b>{nickname}</b></a>
         <span style="color: #666666;"> ({uid[:8]}...)</span>:
-        <span style="color: #ffffff;">{message}</span>'''
+        <span style="color: #ffffff;">{display_message}</span>'''
 
         self.chat_display.append(html)
 
