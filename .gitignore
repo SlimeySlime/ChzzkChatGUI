@@ -6,3 +6,8 @@ log/
 
 # todo.md
 chat.log
+
+# PyInstaller
+build/
+dist/
+*.spec

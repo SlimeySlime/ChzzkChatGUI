@@ -11,7 +11,9 @@
       "Bash(powershell -Command \"[Environment]::GetEnvironmentVariable\\(''Path'', ''Machine''\\)\")",
       "Bash(D:/anaconda3/python.exe:*)",
       "Bash(D:/anaconda3/Scripts/conda.exe search python)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(tree:*)",
+      "Bash(.venv/bin/python:*)"
     ]
   }
 }
