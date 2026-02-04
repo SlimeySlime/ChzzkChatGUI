@@ -1,0 +1,109 @@
+{
+  "svcid": "game",
+  "ver": "1",
+  "cmd": 93101,
+  "tid": "4",
+  "cid": "N2GB1p",
+  "bdy": [
+    {
+      "svcid": "game",
+      "cid": "N2GB1p",
+      "mbrCnt": 773,
+      "uid": "b38a0ef2879dd48c370e3f381e274c44",
+      "profile": {
+        "userIdHash": "b38a0ef2879dd48c370e3f381e274c44",
+        "nickname": "알리체",
+        "profileImageUrl": "",
+        "userRoleCode": "common_user",
+        "badge": null,
+        "title": null,
+        "verifiedMark": false,
+        "activityBadges": [],
+        "streamingProperty": {
+          "nicknameColor": {
+            "colorCode": "CC000"
+          },
+          "activatedAchievementBadgeIds": []
+        },
+        "viewerBadges": []
+      },
+      "msg": "헉",
+      "msgTypeCode": 1,
+      "msgStatusType": "NORMAL",
+      "extras": {
+        "chatType": "STREAMING",
+        "osType": "PC",
+        "extraToken": "N6R23SytO9UNEYzvmJjdoQwpE1jR0A6s5++T4CVmjTUY68+GdatiSEDp27zCWDMmvOt/borCP0pAPLQ23LRxRw==",
+        "streamingChannelId": "f00f6d46ecc6d735b96ecf376b9e5212",
+        "emojis": {}
+      },
+      "ctime": 1769675073750,
+      "utime": 1769675073750,
+      "msgTid": null,
+      "cuid": null,
+      "msgTime": 1769675073750
+    }
+  ]
+}
+
+{
+  "svcid": "game",
+  "ver": "1",
+  "cmd": 93101,
+  "tid": "103",
+  "cid": "N2GB1p",
+  "bdy": [
+    {
+      "svcid": "game",
+      "cid": "N2GB1p",
+      "mbrCnt": 782,
+      "uid": "5507e2b5f1d9694a96e0815bb4daccd6",
+      "profile": {
+        "userIdHash": "5507e2b5f1d9694a96e0815bb4daccd6",
+        "nickname": "반밤",
+        "profileImageUrl": "",
+        "userRoleCode": "common_user",
+        "badge": null,
+        "title": null,
+        "verifiedMark": false,
+        "activityBadges": [
+          {
+            "badgeNo": 385620,
+            "badgeId": "donation_newbie",
+            "imageUrl": "https://ssl.pstatic.net/static/nng/glive/badge/fan_03.png",
+            "activated": true
+          }
+        ],
+        "streamingProperty": {
+          "subscription": {
+            "accumulativeMonth": 29,
+            "tier": 1,
+            "badge": {
+              "imageUrl": "https://nng-phinf.pstatic.net/glive/subscription/badge/f00f6d46ecc6d735b96ecf376b9e5212/1/24.png"
+            }
+          },
+          "nicknameColor": {
+            "colorCode": "CC000"
+          },
+          "activatedAchievementBadgeIds": []
+        },
+        "viewerBadges": []
+      },
+      "msg": " ?",
+      "msgTypeCode": 1,
+      "msgStatusType": "NORMAL",
+      "extras": {
+        "chatType": "STREAMING",
+        "osType": "PC",
+        "extraToken": "LEKadlQ0rEfKctuhoFVXq2Zp9onyjS4Sq9RPYefI3wNbX7RnRsctOihPA1m3CDAMSsd/OcFepun7Wc+NdPmFVw==",
+        "streamingChannelId": "f00f6d46ecc6d735b96ecf376b9e5212",
+        "emojis": {}
+      },
+      "ctime": 1769676599766,
+      "utime": 1769676599766,
+      "msgTid": null,
+      "cuid": null,
+      "msgTime": 1769676599766
+    }
+  ]
+}

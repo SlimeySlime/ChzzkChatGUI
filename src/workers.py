@@ -118,6 +118,9 @@ class ChatWorker(QThread):
         """개별 채팅 데이터 처리"""
         color_code = None
         badges = []
+        subscription_month = None
+        subscription_tier = None
+        user_role = None
 
         if chat_data['uid'] == 'anonymous':
             nickname = '익명의 후원자'
@@ -125,15 +128,20 @@ class ChatWorker(QThread):
             try:
                 profile_data = json.loads(chat_data['profile'])
                 nickname = profile_data["nickname"]
+                user_role = profile_data.get('userRoleCode')  # common_user, manager, streamer
 
                 # colorCode 추출
                 streaming_prop = profile_data.get('streamingProperty', {})
                 nickname_color = streaming_prop.get('nicknameColor', {})
                 color_code = nickname_color.get('colorCode')
 
+                # 구독 정보 추출
+                subscription = streaming_prop.get('subscription', {})
+                subscription_month = subscription.get('accumulativeMonth')
+                subscription_tier = subscription.get('tier')
+
                 # 배지 추출
                 # 1. 구독 배지
-                subscription = streaming_prop.get('subscription', {})
                 sub_badge = subscription.get('badge', {})
                 if sub_badge.get('imageUrl'):
                     badges.append(sub_badge['imageUrl'])
@@ -151,12 +159,14 @@ class ChatWorker(QThread):
         msg_time = datetime.datetime.fromtimestamp(chat_data['msgTime'] / 1000)
         msg_time_str = msg_time.strftime('%H:%M:%S')
 
-        # 이모지 정보 추출
+        # 이모지, OS 타입 추출
         emojis = {}
+        os_type = None
         try:
             if 'extras' in chat_data and chat_data['extras']:
                 extras = json.loads(chat_data['extras'])
                 emojis = extras.get('emojis', {})
+                os_type = extras.get('osType')  # PC, MOBILE
         except:
             pass
 
@@ -169,7 +179,12 @@ class ChatWorker(QThread):
             'message': chat_data['msg'],
             'colorCode': color_code,
             'badges': badges,
-            'emojis': emojis
+            'emojis': emojis,
+            # 추가 필드
+            'subscription_month': subscription_month,
+            'subscription_tier': subscription_tier,
+            'os_type': os_type,
+            'user_role': user_role
         })
 
     def stop(self):

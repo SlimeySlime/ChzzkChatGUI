@@ -1,5 +1,6 @@
 __pycache__
-.venv
+.venv/
+venv/
 cache/
 log/
 
@@ -8,5 +9,5 @@ chat.log
 
 # PyInstaller
 build/
-dist/
+# dist/
 *.spec
