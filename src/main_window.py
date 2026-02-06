@@ -20,7 +20,7 @@ from PyQt6.QtGui import QFont, QIcon, QAction
 
 from src.config import (
     BASE_DIR, BADGE_CACHE_DIR, EMOJI_CACHE_DIR,
-    LOG_DIR, SETTINGS_PATH, ICON_PATH, API_SERVER_URL
+    LOG_DIR, SETTINGS_PATH, ICON_PATH, API_SERVER_URL, API_KEY
 )
 from src.workers import ChatWorker
 from src.dialogs import SettingsDialog, UserChatDialog
@@ -478,9 +478,13 @@ class ChzzkChatUI(QMainWindow):
         self.chat_buffer.clear()
 
         try:
+            headers = {}
+            if API_KEY:
+                headers["Authorization"] = f"Bearer {API_KEY}"
             response = requests.post(
                 f"{API_SERVER_URL}/chat/bulk",
                 json=batch_data,
+                headers=headers,
                 timeout=10
             )
             if response.status_code == 200:

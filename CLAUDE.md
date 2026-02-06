@@ -65,7 +65,39 @@
 - `CC000` - 일반 유저 (uid 해시 기반 팔레트 색상)
 - `SG001~SG009` - 치트키 사용자 (고정 색상)
 
+## 서버 연동 (구현 완료)
+
+### 배치 전송 기능
+- `src/config.py`: `API_SERVER_URL`, `API_KEY` 설정
+- `src/main_window.py`:
+  - `chat_buffer`: 채팅 임시 저장 리스트
+  - `batch_timer`: 1분마다 배치 전송 (QTimer)
+  - `send_batch_to_server()`: `POST /chat/bulk`로 전송 (`Authorization: Bearer` 헤더 포함)
+  - 1000건 초과시 즉시 전송
+
+### 전송 데이터 구조
+```json
+{
+  "channel_id": "스트리머 해시 ID",
+  "channel_name": "스트리머명",
+  "user_id": "시청자 해시 ID",
+  "nickname": "닉네임",
+  "message": "채팅 내용",
+  "message_type": "chat/donation",
+  "chat_time": "2026-02-04T12:00:00",
+  "subscription_month": 29,
+  "subscription_tier": 1,
+  "os_type": "PC/MOBILE",
+  "user_role": "common_user/manager/streamer"
+}
+```
+
+### 관련 파일
+- `src/workers.py`: ChatWorker에서 채팅 파싱 시 추가 데이터 추출
+- `src/main_window.py`: 버퍼 관리 및 배치 전송
+
 ## 개발 환경
 - Python 3.12
 - PyQt6 >= 6.6.0
-- venv: `.venv/`
+- requests (서버 통신)
+- venv: `venv/`
