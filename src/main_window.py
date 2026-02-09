@@ -13,17 +13,22 @@ from collections import defaultdict
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QLineEdit, QPushButton, QSystemTrayIcon, QMenu,
-    QDialog, QGraphicsOpacityEffect, QApplication
+    QDialog, QGraphicsOpacityEffect, QApplication, QTextEdit
 )
 from PyQt6.QtCore import QTimer, Qt
-from PyQt6.QtGui import QFont, QIcon, QAction
+from PyQt6.QtGui import (
+    QFont, QIcon, QAction, QShortcut, QKeySequence,
+    QTextCharFormat, QColor, QTextCursor
+)
 
 from src.config import (
     BASE_DIR, BADGE_CACHE_DIR, EMOJI_CACHE_DIR,
-    LOG_DIR, SETTINGS_PATH, ICON_PATH
+    LOG_DIR, SETTINGS_PATH, ICON_PATH, BUG_REPORT_EMAIL
 )
+logger = logging.getLogger(__name__)
+
 from src.workers import ChatWorker
-from src.dialogs import SettingsDialog, UserChatDialog
+from src.dialogs import SettingsDialog, UserChatDialog, BugReportDialog
 from src.widgets import ClickableTextEdit
 
 
@@ -76,6 +81,10 @@ class ChzzkChatUI(QMainWindow):
         self.badge_cache = {}
         self.emoji_cache = {}
         self.settings = self.load_settings()
+        self.donation_only = False          # 후원 전용보기 Flag
+        self.all_messages = []              # (chat_type, html) 전체 메시지 기록
+        self.search_matches = []
+        self.search_match_index = 0         # search cursor index
 
         self.init_ui()
         self.init_tray_icon()
@@ -111,8 +120,8 @@ class ChzzkChatUI(QMainWindow):
                     f.write(response.content)
                 self.badge_cache[url] = local_path
                 return local_path
-        except:
-            pass
+        except Exception:
+            logger.debug('배지 다운로드 실패: %s', url, exc_info=True)
 
         return None
 
@@ -144,8 +153,8 @@ class ChzzkChatUI(QMainWindow):
                     f.write(response.content)
                 self.emoji_cache[url] = local_path
                 return local_path
-        except:
-            pass
+        except Exception:
+            logger.debug('이모지 다운로드 실패: %s', url, exc_info=True)
 
         return None
 
@@ -178,8 +187,8 @@ class ChzzkChatUI(QMainWindow):
             if os.path.exists(SETTINGS_PATH):
                 with open(SETTINGS_PATH, 'r', encoding='utf-8') as f:
                     return {**default_settings, **json.load(f)}
-        except:
-            pass
+        except Exception:
+            logger.warning('설정 파일 로드 실패', exc_info=True)
         return default_settings
 
     def save_settings(self):
@@ -187,8 +196,8 @@ class ChzzkChatUI(QMainWindow):
         try:
             with open(SETTINGS_PATH, 'w', encoding='utf-8') as f:
                 json.dump(self.settings, f, ensure_ascii=False, indent=2)
-        except:
-            pass
+        except Exception:
+            logger.warning('설정 파일 저장 실패', exc_info=True)
 
     def init_ui(self):
         """UI 초기화"""
@@ -222,6 +231,15 @@ class ChzzkChatUI(QMainWindow):
 
         # 옵션 메뉴
         option_menu = menubar.addMenu('옵션')
+        self.donation_only_action = QAction('후원만 보기', self)
+        self.donation_only_action.setCheckable(True)
+        self.donation_only_action.triggered.connect(self.toggle_donation_only)
+        option_menu.addAction(self.donation_only_action)
+        option_menu.addSeparator()
+        clear_action = QAction('채팅 내역 초기화', self)
+        clear_action.triggered.connect(self.clear_chat)
+        option_menu.addAction(clear_action)
+        option_menu.addSeparator()
         quit_action = QAction('종료', self)
         quit_action.triggered.connect(self.quit_app)
         option_menu.addAction(quit_action)
@@ -231,6 +249,12 @@ class ChzzkChatUI(QMainWindow):
         setting_action = QAction('설정 열기', self)
         setting_action.triggered.connect(self.open_settings)
         setting_menu.addAction(setting_action)
+
+        # 도움말 메뉴
+        help_menu = menubar.addMenu('도움말')
+        bug_report_action = QAction('버그 리포트', self)
+        bug_report_action.triggered.connect(self.open_bug_report)
+        help_menu.addAction(bug_report_action)
 
         # 트레이로 버튼
         tray_action = QAction('트레이로', self)
@@ -313,6 +337,56 @@ class ChzzkChatUI(QMainWindow):
         chat_container_layout.addWidget(self.chat_display)
         layout.addWidget(chat_container)
 
+        # 검색 바 (Ctrl+F)
+        self.search_bar = QWidget()
+        self.search_bar.hide()
+        search_layout = QHBoxLayout(self.search_bar)
+        search_layout.setContentsMargins(5, 2, 5, 2)
+        search_style = '''
+            QLineEdit {
+                background-color: #1a1a1a; color: #ffffff;
+                border: 1px solid #333; padding: 4px 8px; border-radius: 3px;
+            }
+            QLineEdit:focus { border: 1px solid #00ff00; }
+            QPushButton {
+                background-color: #3d3d3d; color: #cccccc;
+                border: none; padding: 4px 10px; border-radius: 3px;
+            }
+            QPushButton:hover { background-color: #4d4d4d; }
+            QLabel { color: #888888; font-size: 11px; }
+        '''
+        self.search_bar.setStyleSheet(search_style)
+
+        self.search_input = QLineEdit()
+        self.search_input.setPlaceholderText('검색...')
+        self.search_input.textChanged.connect(self.perform_search)
+        self.search_input.returnPressed.connect(self.search_next)
+        search_layout.addWidget(self.search_input)
+
+        prev_btn = QPushButton('▲')
+        prev_btn.setFixedWidth(30)
+        prev_btn.clicked.connect(self.search_prev)
+        search_layout.addWidget(prev_btn)
+
+        next_btn = QPushButton('▼')
+        next_btn.setFixedWidth(30)
+        next_btn.clicked.connect(self.search_next)
+        search_layout.addWidget(next_btn)
+
+        self.search_count_label = QLabel('')
+        search_layout.addWidget(self.search_count_label)
+
+        close_btn = QPushButton('✕')
+        close_btn.setFixedWidth(30)
+        close_btn.clicked.connect(self.close_search)
+        search_layout.addWidget(close_btn)
+
+        layout.addWidget(self.search_bar)
+
+        # 단축키
+        QShortcut(QKeySequence('Ctrl+F'), self, self.toggle_search_bar)
+        QShortcut(QKeySequence('Escape'), self, self.close_search)
+
         # 최신 채팅 오버레이
         self.latest_chat_overlay = QLabel()
         self.latest_chat_overlay.setParent(self.chat_display)
@@ -376,6 +450,98 @@ class ChzzkChatUI(QMainWindow):
         if hasattr(self, 'tray_icon'):
             self.hide()
 
+    def toggle_donation_only(self):
+        """후원 전용 보기 토글 — 전체 메시지를 re-render"""
+        self.donation_only = self.donation_only_action.isChecked()
+        self.chat_display.clear()
+        for chat_type, html in self.all_messages:
+            if not self.donation_only or chat_type == '후원':
+                self.chat_display.append(html)
+
+    def toggle_search_bar(self):
+        """검색 바 토글 (Ctrl+F)"""
+        if self.search_bar.isVisible():
+            self.close_search()
+        else:
+            self.search_bar.show()
+            self.search_input.setFocus()
+            self.search_input.selectAll()
+
+    def close_search(self):
+        """검색 바 닫기 + 하이라이트 해제"""
+        self.search_bar.hide()
+        self.search_matches.clear()
+        self.search_match_index = 0
+        self.search_count_label.setText('')
+        self.chat_display.setExtraSelections([])
+
+    def perform_search(self, text):
+        """검색 실행 — 모든 매칭 하이라이트"""
+        self.search_matches.clear()
+        self.search_match_index = 0
+
+        if not text:
+            self.chat_display.setExtraSelections([])
+            self.search_count_label.setText('')
+            return
+
+        doc = self.chat_display.document()
+        cursor = QTextCursor(doc)
+        while True:
+            cursor = doc.find(text, cursor)
+            if cursor.isNull():
+                break
+            self.search_matches.append(QTextCursor(cursor))
+
+        if self.search_matches:
+            self._update_search_highlights()
+            self.search_count_label.setText(f'1/{len(self.search_matches)}')
+        else:
+            self.chat_display.setExtraSelections([])
+            self.search_count_label.setText('0건')
+
+    def search_next(self):
+        """다음 검색 결과로 이동"""
+        if not self.search_matches:
+            return
+        self.search_match_index = (self.search_match_index + 1) % len(self.search_matches)
+        self._update_search_highlights()
+        self.search_count_label.setText(f'{self.search_match_index + 1}/{len(self.search_matches)}')
+
+    def search_prev(self):
+        """이전 검색 결과로 이동"""
+        if not self.search_matches:
+            return
+        self.search_match_index = (self.search_match_index - 1) % len(self.search_matches)
+        self._update_search_highlights()
+        self.search_count_label.setText(f'{self.search_match_index + 1}/{len(self.search_matches)}')
+
+    def _update_search_highlights(self):
+        """검색 결과 하이라이트 갱신"""
+        highlight_fmt = QTextCharFormat()
+        highlight_fmt.setBackground(QColor('#665500'))
+
+        current_fmt = QTextCharFormat()
+        current_fmt.setBackground(QColor('#ffff00'))
+        current_fmt.setForeground(QColor('#000000'))
+
+        selections = []
+        for i, cursor in enumerate(self.search_matches):
+            sel = QTextEdit.ExtraSelection()
+            sel.cursor = cursor
+            sel.format = current_fmt if i == self.search_match_index else highlight_fmt
+            selections.append(sel)
+
+        self.chat_display.setExtraSelections(selections)
+        self.chat_display.setTextCursor(self.search_matches[self.search_match_index])
+
+    def clear_chat(self):
+        """채팅 내역 초기화"""
+        self.chat_display.clear()
+        self.all_messages.clear()
+        self.user_messages.clear()
+        self.user_nicknames.clear()
+
     def quit_app(self):
         """앱 종료"""
         if self.worker:
@@ -384,6 +550,15 @@ class ChzzkChatUI(QMainWindow):
         if hasattr(self, 'tray_icon'):
             self.tray_icon.hide()
         QApplication.quit()
+
+    def open_bug_report(self):
+        """버그 리포트 다이얼로그 열기"""
+        if not BUG_REPORT_EMAIL:
+            from PyQt6.QtWidgets import QMessageBox
+            QMessageBox.information(self, '알림', '.env 파일에 BUG_REPORT_EMAIL을 설정해주세요.')
+            return
+        dialog = BugReportDialog(BUG_REPORT_EMAIL, self)
+        dialog.exec()
 
     def open_settings(self):
         """설정 다이얼로그 열기"""
@@ -523,6 +698,7 @@ class ChzzkChatUI(QMainWindow):
         self.worker.status_changed.connect(self.on_status_changed)
         self.worker.start()
 
+    # 채팅 메시지 업데이트 
     def on_chat_received(self, chat_data):
         """채팅 메시지 수신 시 호출"""
         time_str = chat_data['time']
@@ -572,6 +748,15 @@ class ChzzkChatUI(QMainWindow):
         <a href="user:{uid}" style="color: {color}; text-decoration: none;">{prefix}<b>{nickname}</b></a>
         <span style="color: #ffffff;">{display_message}</span>'''
         # <span style="color: #666666;"> ({uid[:8]}...)</span>: # uid는 log에만 기록되면 될것같아.
+
+        # 메시지 기록 저장 (re-render용)
+        self.all_messages.append((chat_type, html))
+        if len(self.all_messages) > self.MAX_DISPLAY_MESSAGES:
+            del self.all_messages[:len(self.all_messages) - self.MAX_DISPLAY_MESSAGES]
+
+        # 후원 전용 모드: 후원이 아니면 표시 스킵
+        if self.donation_only and chat_type != '후원':
+            return
 
         self.chat_display.append(html)
 

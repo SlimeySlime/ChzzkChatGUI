@@ -58,6 +58,24 @@ COOKIES_PATH = os.path.join(BASE_DIR, 'cookies.json')
 # 리소스 경로 (이미지 등 - 번들에 포함된 리소스)
 IMG_DIR = os.path.join(RESOURCE_DIR, 'img')
 ICON_PATH = os.path.join(IMG_DIR, 'chzzk.png')
+ENV_PATH = os.path.join(BASE_DIR, '.env')
+
+
+def _load_env():
+    """간단한 .env 파서 (KEY=VALUE 형식)"""
+    env = {}
+    if os.path.exists(ENV_PATH):
+        with open(ENV_PATH, encoding='utf-8') as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith('#') and '=' in line:
+                    key, _, value = line.partition('=')
+                    env[key.strip()] = value.strip().strip('"').strip("'")
+    return env
+
+
+_env = _load_env()
+BUG_REPORT_EMAIL = _env.get('BUG_REPORT_EMAIL', '')
 
 # 디렉토리 생성
 os.makedirs(BADGE_CACHE_DIR, exist_ok=True)

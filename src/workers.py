@@ -3,12 +3,15 @@ WebSocket 채팅 수신 워커 스레드
 """
 import json
 import datetime
+import logging
 
 from PyQt6.QtCore import QThread, pyqtSignal
 from websocket import WebSocket
 
 import api
 from cmd_type import CHZZK_CHAT_CMD
+
+logger = logging.getLogger(__name__)
 
 
 class ChatWorker(QThread):
@@ -111,8 +114,8 @@ class ChatWorker(QThread):
                 if self.running:
                     try:
                         self.connect_chat()
-                    except:
-                        pass
+                    except Exception:
+                        logger.warning('재연결 실패', exc_info=True)
 
     def _process_chat_data(self, chat_data, chat_type):
         """개별 채팅 데이터 처리"""
@@ -153,7 +156,8 @@ class ChatWorker(QThread):
 
                 if 'msg' not in chat_data:
                     return
-            except:
+            except Exception:
+                logger.debug('프로필 파싱 실패: uid=%s', chat_data.get('uid'), exc_info=True)
                 return
 
         msg_time = datetime.datetime.fromtimestamp(chat_data['msgTime'] / 1000)
@@ -167,8 +171,8 @@ class ChatWorker(QThread):
                 extras = json.loads(chat_data['extras'])
                 emojis = extras.get('emojis', {})
                 os_type = extras.get('osType')  # PC, MOBILE
-        except:
-            pass
+        except Exception:
+            logger.debug('extras 파싱 실패', exc_info=True)
 
         # 메인 스레드로 시그널 전송
         self.chat_received.emit({

@@ -2,11 +2,19 @@
 다이얼로그 클래스들
 - SettingsDialog: 설정 대화상자
 - UserChatDialog: 사용자 채팅 기록 팝업
+- BugReportDialog: 버그 리포트
 """
+import platform
+import sys
+from urllib.parse import quote
+
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QFormLayout, QSpinBox,
-    QDialogButtonBox, QLabel, QScrollArea, QWidget
+    QDialogButtonBox, QLabel, QScrollArea, QWidget,
+    QLineEdit, QTextEdit, QPushButton, QMessageBox
 )
+from PyQt6.QtCore import QUrl
+from PyQt6.QtGui import QDesktopServices
 
 
 class SettingsDialog(QDialog):
@@ -136,3 +144,91 @@ class UserChatDialog(QDialog):
         chat_layout.addStretch()
         scroll_area.setWidget(chat_widget)
         layout.addWidget(scroll_area)
+
+
+class BugReportDialog(QDialog):
+    """버그 리포트 다이얼로그"""
+
+    def __init__(self, email, parent=None):
+        super().__init__(parent)
+        self.email = email
+        self.init_ui()
+
+    def init_ui(self):
+        self.setWindowTitle('버그 리포트')
+        self.setFixedSize(450, 350)
+        self.setStyleSheet('''
+            QDialog { background-color: #2b2b2b; }
+            QLabel { color: #cccccc; }
+            QLineEdit, QTextEdit {
+                background-color: #1a1a1a; color: #ffffff;
+                border: 1px solid #333; padding: 6px; border-radius: 4px;
+            }
+            QLineEdit:focus, QTextEdit:focus { border: 1px solid #00ff00; }
+        ''')
+
+        layout = QVBoxLayout(self)
+
+        # 제목
+        layout.addWidget(QLabel('제목'))
+        self.title_input = QLineEdit()
+        self.title_input.setPlaceholderText('버그 제목을 입력하세요')
+        layout.addWidget(self.title_input)
+
+        # 설명
+        layout.addWidget(QLabel('설명'))
+        self.desc_input = QTextEdit()
+        self.desc_input.setPlaceholderText('어떤 상황에서 버그가 발생했나요?\n재현 방법이 있다면 알려주세요.')
+        layout.addWidget(self.desc_input)
+
+        # 시스템 정보
+        self.sys_info = f'OS: {platform.system()} {platform.release()}, Python: {sys.version.split()[0]}'
+        info_label = QLabel(f'<span style="color: #666;">{self.sys_info}</span>')
+        layout.addWidget(info_label)
+
+        # 전송 버튼
+        send_btn = QPushButton('메일 클라이언트로 보내기')
+        send_btn.setStyleSheet('''
+            QPushButton {
+                background-color: #00ff00; color: #000000;
+                border: none; padding: 8px; border-radius: 4px; font-weight: bold;
+            }
+            QPushButton:hover { background-color: #00cc00; }
+        ''')
+        send_btn.clicked.connect(self.send_report)
+        layout.addWidget(send_btn)
+
+    def send_report(self):
+        import logging
+        logger = logging.getLogger(__name__)
+
+        title = self.title_input.text().strip()
+        desc = self.desc_input.toPlainText().strip()
+
+        if not title:
+            QMessageBox.warning(self, '알림', '제목을 입력해주세요.')
+            return
+
+        subject = f'[ChzzkChat Bug] {title}'
+        body = f'{desc}\n\n---\n{self.sys_info}'
+        mailto_str = f'mailto:{self.email}?subject={quote(subject)}&body={quote(body)}'
+
+        logger.info('버그리포트 mailto URL: %s', mailto_str)
+
+        try:
+            url = QUrl(mailto_str)
+            logger.info('QUrl valid=%s, scheme=%s', url.isValid(), url.scheme())
+
+            result = QDesktopServices.openUrl(url)
+            logger.info('QDesktopServices.openUrl 결과: %s', result)
+
+            if not result:
+                # QDesktopServices 실패 시 webbrowser fallback
+                import webbrowser
+                webbrowser.open(mailto_str)
+                logger.info('webbrowser.open fallback 사용')
+
+            self.accept()
+        except Exception:
+            logger.exception('버그리포트 전송 실패')
+            QMessageBox.warning(self, '오류', '메일 클라이언트를 열 수 없습니다.\n로그를 확인해주세요.')
