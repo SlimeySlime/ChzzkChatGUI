@@ -2,6 +2,10 @@
 
 ## 현재 진행 예정 (우선순위)
 
+https://chzzk.naver.com/live/a9a343510e132ea3026ff3cf682820b5
+와 같은 url도 적절히 parsing해서 uid 부분만 추출한뒤 연결 가능해야함
+(uid 직접 입력과, 주소전체 입력 모두 연결 가능하게끔)
+
 ### 1. 자동 업데이트 구현
 - [ ] 버전 관리 시스템 구축
   - `version.py` 또는 `__version__` 상수 추가

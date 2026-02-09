@@ -59,11 +59,6 @@ COOKIES_PATH = os.path.join(BASE_DIR, 'cookies.json')
 IMG_DIR = os.path.join(RESOURCE_DIR, 'img')
 ICON_PATH = os.path.join(IMG_DIR, 'chzzk.png')
 
-# API 서버 설정
-API_SERVER_URL = "http://localhost:8000"
-API_KEY = "chzzk_9nmtiLzT7z2Y1pvDIudQdkFsUagvBjb81rDEgeg0Kcc" 
-# create_api_key.py로 생성한 키를 입력하세요    keyname: 'localtest'
-
 # 디렉토리 생성
 os.makedirs(BADGE_CACHE_DIR, exist_ok=True)
 os.makedirs(EMOJI_CACHE_DIR, exist_ok=True)

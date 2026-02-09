@@ -20,7 +20,7 @@ from PyQt6.QtGui import QFont, QIcon, QAction
 
 from src.config import (
     BASE_DIR, BADGE_CACHE_DIR, EMOJI_CACHE_DIR,
-    LOG_DIR, SETTINGS_PATH, ICON_PATH, API_SERVER_URL, API_KEY
+    LOG_DIR, SETTINGS_PATH, ICON_PATH
 )
 from src.workers import ChatWorker
 from src.dialogs import SettingsDialog, UserChatDialog
@@ -29,6 +29,9 @@ from src.widgets import ClickableTextEdit
 
 class ChzzkChatUI(QMainWindow):
     """메인 UI 윈도우"""
+
+    MAX_DISPLAY_MESSAGES = 10000  # chat_display 최대 메시지 수
+    MAX_USER_MESSAGES = 500       # 유저당 최대 메시지 수
 
     # 치지직 colorCode 매핑 테이블 (프리미엄 색상)
     COLOR_CODE_MAP = {
@@ -73,12 +76,6 @@ class ChzzkChatUI(QMainWindow):
         self.badge_cache = {}
         self.emoji_cache = {}
         self.settings = self.load_settings()
-
-        # 서버 배치 전송용 버퍼
-        self.chat_buffer = []
-        self.batch_timer = QTimer()
-        self.batch_timer.timeout.connect(self.send_batch_to_server)
-        self.batch_timer.start(60000)  # 1분마다 전송
 
         self.init_ui()
         self.init_tray_icon()
@@ -253,7 +250,7 @@ class ChzzkChatUI(QMainWindow):
         connect_layout.addWidget(uid_label)
 
         self.url_input = QLineEdit()
-        self.url_input.setPlaceholderText('예: 17aa057a8248b53affe30512a91481f5')
+        self.url_input.setPlaceholderText('UID 또는 URL 입력')
         self.url_input.setStyleSheet('''
             QLineEdit {
                 background-color: #1a1a1a;
@@ -381,10 +378,6 @@ class ChzzkChatUI(QMainWindow):
 
     def quit_app(self):
         """앱 종료"""
-        # 버퍼에 남은 채팅 전송
-        self.send_batch_to_server()
-        self.batch_timer.stop()
-
         if self.worker:
             self.worker.stop()
             self.worker.wait()
@@ -445,72 +438,28 @@ class ChzzkChatUI(QMainWindow):
             self._update_log_handler()
             self.chat_logger.info(f'[{time_str}][{chat_type}][{uid}] {nickname}: {message}')
 
-    def add_to_batch_buffer(self, chat_data):
-        """배치 전송 버퍼에 채팅 추가"""
-        if not self.worker:
-            return
-
-        self.chat_buffer.append({
-            'channel_id': self.streamer,
-            'channel_name': getattr(self.worker, 'channelName', None),
-            'user_id': chat_data['uid'],
-            'nickname': chat_data['nickname'],
-            'message': chat_data['message'],
-            'message_type': 'donation' if chat_data['type'] == '후원' else 'chat',
-            'chat_time': datetime.datetime.now().strftime('%Y-%m-%dT%H:%M:%S'),
-            # 추가 필드
-            'subscription_month': chat_data.get('subscription_month'),
-            'subscription_tier': chat_data.get('subscription_tier'),
-            'os_type': chat_data.get('os_type'),
-            'user_role': chat_data.get('user_role')
-        })
-
-        # 버퍼가 1000건 이상이면 즉시 전송
-        if len(self.chat_buffer) >= 1000:
-            self.send_batch_to_server()
-
-    def send_batch_to_server(self):
-        """버퍼의 채팅을 서버로 배치 전송"""
-        if not self.chat_buffer:
-            return
-
-        batch_data = self.chat_buffer.copy()
-        self.chat_buffer.clear()
-
-        try:
-            headers = {}
-            if API_KEY:
-                headers["Authorization"] = f"Bearer {API_KEY}"
-            response = requests.post(
-                f"{API_SERVER_URL}/chat/bulk",
-                json=batch_data,
-                headers=headers,
-                timeout=10
-            )
-            if response.status_code == 200:
-                result = response.json()
-                print(f"[배치 전송 완료] {result.get('saved', 0)}건 저장")
-            else:
-                print(f"[배치 전송 실패] 상태코드: {response.status_code}")
-                self.chat_buffer.extend(batch_data)
-        except Exception as e:
-            print(f"[배치 전송 오류] {e}")
-            # 오류 시 버퍼에 다시 추가 (최대 2000건까지)
-            self.chat_buffer.extend(batch_data[:2000 - len(self.chat_buffer)])
-
     def on_tray_activated(self, reason):
         """트레이 아이콘 클릭 시"""
         if reason == QSystemTrayIcon.ActivationReason.Trigger:
             self.show_window()
 
     def extract_streamer_id(self, url_or_id):
-        """URL에서 스트리머 ID 추출"""
+        """URL 또는 UID에서 스트리머 ID(32자 hex) 추출
+
+        지원 형식:
+        - 직접 UID: 17aa057a8248b53affe30512a91481f5
+        - chzzk.naver.com/live/{uid}
+        - chzzk.naver.com/{uid}
+        - chzzkban.xyz/chzzk/channel/{uid}
+        - 기타 URL 내 32자 hex 패턴
+        """
         url_or_id = url_or_id.strip()
-        if 'chzzk.naver.com/' in url_or_id:
-            parts = url_or_id.split('chzzk.naver.com/')
-            if len(parts) > 1:
-                channel_part = parts[1].split('/')[0].split('?')[0]
-                return channel_part
+
+        # URL에서 32자 hex ID 추출
+        match = re.search(r'[a-f0-9]{32}', url_or_id)
+        if match:
+            return match.group(0)
+
         return url_or_id
 
     def on_connect_clicked(self):
@@ -585,19 +534,19 @@ class ChzzkChatUI(QMainWindow):
         badges = chat_data.get('badges', [])
         emojis = chat_data.get('emojis', {})
 
-        # 사용자별 메시지 저장
-        self.user_messages[uid].append({
+        # 사용자별 메시지 저장 (유저당 최대 MAX_USER_MESSAGES건)
+        user_msgs = self.user_messages[uid]
+        user_msgs.append({
             'time': time_str,
             'type': chat_type,
             'message': message
         })
+        if len(user_msgs) > self.MAX_USER_MESSAGES:
+            del user_msgs[:len(user_msgs) - self.MAX_USER_MESSAGES]
         self.user_nicknames[uid] = nickname
 
         # 채팅 로그 기록 (로컬 파일)
         self.log_chat(time_str, chat_type, nickname, uid, message)
-
-        # 서버 전송 버퍼에 추가
-        self.add_to_batch_buffer(chat_data)
 
         # 닉네임 색상 결정
         if chat_type == '후원':
@@ -625,6 +574,17 @@ class ChzzkChatUI(QMainWindow):
         # <span style="color: #666666;"> ({uid[:8]}...)</span>: # uid는 log에만 기록되면 될것같아.
 
         self.chat_display.append(html)
+
+        # 표시 메시지 수 제한
+        doc = self.chat_display.document()
+        overflow = doc.blockCount() - self.MAX_DISPLAY_MESSAGES
+        if overflow > 0:
+            cursor = self.chat_display.textCursor()
+            cursor.movePosition(cursor.MoveOperation.Start)
+            cursor.movePosition(cursor.MoveOperation.Down, cursor.MoveMode.KeepAnchor, overflow)
+            cursor.movePosition(cursor.MoveOperation.StartOfBlock, cursor.MoveMode.KeepAnchor)
+            cursor.removeSelectedText()
+            cursor.deleteChar()  # 남은 빈 줄 제거
 
         # 스크롤이 맨 아래가 아닐 때만 오버레이 표시
         scrollbar = self.chat_display.verticalScrollBar()
@@ -715,10 +675,6 @@ class ChzzkChatUI(QMainWindow):
 
     def closeEvent(self, event):
         """윈도우 X 버튼 클릭 시 앱 종료"""
-        # 버퍼에 남은 채팅 전송
-        self.send_batch_to_server()
-        self.batch_timer.stop()
-
         # 창 크기 저장
         self.settings['window_width'] = self.width()
         self.settings['window_height'] = self.height()
