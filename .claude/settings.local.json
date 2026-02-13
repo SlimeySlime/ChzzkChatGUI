@@ -23,7 +23,9 @@
       "Bash(pip install:*)",
       "Bash(timeout 10 flet run:*)",
       "Bash(\"/home/jinsu/frogs/Server and Chat/ChzzkChat/.venv/bin/python\" -c \"import flet; print\\(''flet'', flet.version.version\\)\")",
-      "Bash(timeout 8 .venv/bin/flet run:*)"
+      "Bash(timeout 8 .venv/bin/flet run:*)",
+      "Bash(pip3 show:*)",
+      "WebSearch"
     ]
   }
 }

@@ -1,14 +1,56 @@
-"""ChzzkChat - Flet 앱 진입점"""
+"""ChzzkChat - Flet 앱 진입점
+
+async def main() 사용 이유:
+  Flet은 async-first 프레임워크. 백그라운드 스레드(threading.Thread)에서
+  page.update()를 호출하면 UI가 실시간 갱신되지 않는 버그가 있다.
+  (Flet Issue #3571, #5902 — threading.Lock으로도 해결 불가)
+
+  해결: main()을 async로 선언하고, ChatWorker를 page.run_task()로
+  Flet 이벤트 루프에서 실행. 콜백이 같은 루프에서 호출되므로
+  page.update()가 즉시 UI에 반영된다.
+"""
 
 import json
 import os
+import re
 
 import flet as ft
 
+from chat_worker import ChatWorker
 from config import COOKIES_PATH
 
+# ── 닉네임 색상 ──
+COLOR_CODE_MAP = {
+    'SG001': '#8bff00', 'SG002': '#00ffff', 'SG003': '#ff00ff',
+    'SG004': '#ffff00', 'SG005': '#ff8800', 'SG006': '#ff0088',
+    'SG007': '#00aaff', 'SG008': '#aa00ff', 'SG009': '#ff0000',
+}
 
-def main(page: ft.Page):
+USER_COLOR_PALETTE = [
+    '#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4',
+    '#FFEAA7', '#DDA0DD', '#98D8C8', '#F7DC6F',
+    '#BB8FCE', '#82E0AA', '#F1948A', '#85C1E9',
+]
+
+
+def get_user_color(uid: str, color_code: str | None) -> str:
+    """닉네임 색상 결정: 프리미엄 코드 → 해시 기반 팔레트"""
+    if color_code and color_code in COLOR_CODE_MAP:
+        return COLOR_CODE_MAP[color_code]
+    idx = abs(hash(uid)) % len(USER_COLOR_PALETTE)
+    return USER_COLOR_PALETTE[idx]
+
+
+def extract_streamer_id(url_or_id: str) -> str:
+    """URL 또는 UID에서 스트리머 ID(32자 hex) 추출"""
+    url_or_id = url_or_id.strip()
+    match = re.search(r'[a-f0-9]{32}', url_or_id)
+    if match:
+        return match.group(0)
+    return url_or_id
+
+
+async def main(page: ft.Page):
     # ── 윈도우 설정 ──
     page.title = "Chzzk Chat"
     page.window.width = 500
@@ -23,17 +65,136 @@ def main(page: ft.Page):
     if os.path.exists(COOKIES_PATH):
         try:
             with open(COOKIES_PATH, encoding='utf-8') as f:
-                cookies = json.load(f)
+                data = json.load(f)
+            if not isinstance(data, dict) or not data:
+                raise ValueError("빈 파일이거나 올바른 JSON 객체가 아닙니다")
+            cookies = data
         except Exception as e:
-            page.open(ft.SnackBar(
-                content=ft.Text(f"cookies.json 파싱 실패: {e}"),
+            page.show_dialog(ft.SnackBar(
+                ft.Text(f"cookies.json 파싱 실패: {e}"),
                 bgcolor=ft.Colors.RED_900,
             ))
     else:
-        page.open(ft.SnackBar(
-            content=ft.Text("cookies.json 파일이 없습니다. 네이버 인증 쿠키를 설정해주세요."),
+        page.show_dialog(ft.SnackBar(
+            ft.Text("cookies.json 파일이 없습니다. 네이버 인증 쿠키를 설정해주세요."),
             bgcolor=ft.Colors.RED_900,
         ))
+
+    # ── ChatWorker 상태 ──
+    worker = None
+
+    # ChatWorker가 page.run_task()로 같은 이벤트 루프에서 실행되므로
+    # 아래 콜백에서 page.update() 호출이 안전함 (스레드 경합 없음)
+    def on_chat_received(chat_data):
+        is_donation = chat_data['type'] == '후원'
+
+        # 닉네임 색상
+        if is_donation:
+            nick_color = '#ffcc00'
+        else:
+            nick_color = get_user_color(chat_data['uid'], chat_data.get('colorCode'))
+
+        # 시간
+        time_text = ft.Text(
+            f"[{chat_data['time']}] ",
+            size=13,
+            color=ft.Colors.GREY_500,
+            selectable=True,
+            no_wrap=True,
+        )
+
+        # 닉네임
+        prefix = "[후원] " if is_donation else ""
+        nick_text = ft.Text(
+            f"{prefix}{chat_data['nickname']}",
+            size=13,
+            color=nick_color,
+            weight=ft.FontWeight.BOLD,
+            selectable=True,
+            no_wrap=True,
+        )
+
+        # 메시지
+        msg_text = ft.Text(
+            f": {chat_data['message']}",
+            size=13,
+            color=ft.Colors.WHITE,
+            selectable=True,
+            expand=True,
+        )
+
+        # 후원 메시지 배경
+        row = ft.Row(
+            controls=[time_text, nick_text, msg_text],
+            spacing=0,
+            vertical_alignment=ft.CrossAxisAlignment.START,
+        )
+
+        if is_donation:
+            container = ft.Container(
+                content=row,
+                bgcolor=ft.Colors.with_opacity(0.15, '#ffcc00'),
+                border_radius=4,
+                padding=ft.Padding(left=4, right=4, top=2, bottom=2),
+            )
+            widget = container
+        else:
+            widget = row
+
+        chat_list.controls.append(widget)
+        page.update()
+
+    def on_status_changed(msg):
+        if '연결 완료' in msg:
+            status_text.color = ft.Colors.GREEN_400
+            connect_btn.content.value = "해제"
+            connect_btn.bgcolor = ft.Colors.RED_700
+            connect_btn.disabled = False
+        elif '연결 실패' in msg or '재연결 실패' in msg:
+            status_text.color = ft.Colors.RED_400
+            connect_btn.content.value = "연결"
+            connect_btn.bgcolor = ft.Colors.GREEN
+            connect_btn.disabled = False
+            url_input.disabled = False
+        else:
+            status_text.color = ft.Colors.YELLOW_400
+        status_text.value = msg
+        page.update()
+
+    async def on_connect_clicked(e):
+        nonlocal worker
+
+        # 해제 모드
+        if worker and worker.running:
+            await worker.stop()
+            worker = None
+            connect_btn.content.value = "연결"
+            connect_btn.bgcolor = ft.Colors.GREEN
+            connect_btn.disabled = False
+            url_input.disabled = False
+            status_text.value = "연결 해제됨"
+            status_text.color = ft.Colors.GREY_500
+            page.update()
+            return
+
+        # 연결 모드
+        raw = url_input.value or ""
+        uid = extract_streamer_id(raw)
+        if not uid:
+            status_text.value = "스트리머 주소를 입력해주세요"
+            status_text.color = ft.Colors.RED_400
+            page.update()
+            return
+
+        connect_btn.disabled = True
+        connect_btn.content.value = "연결 중..."
+        url_input.disabled = True
+        status_text.value = "채팅 서버에 연결 중..."
+        status_text.color = ft.Colors.YELLOW_400
+        page.update()
+
+        worker = ChatWorker(uid, cookies, on_chat_received, on_status_changed)
+        page.run_task(worker.run)  # Flet 이벤트 루프에서 async 실행
 
     # ── 상단: URL 입력 영역 ──
     url_input = ft.TextField(
@@ -51,6 +212,7 @@ def main(page: ft.Page):
         color=ft.Colors.BLACK,
         bgcolor=ft.Colors.GREEN,
         height=48,
+        on_click=on_connect_clicked,
         style=ft.ButtonStyle(
             shape=ft.RoundedRectangleBorder(radius=4),
         ),

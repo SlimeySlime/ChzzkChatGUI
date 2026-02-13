@@ -10,29 +10,37 @@
 ## Step 2: API 레이어 + URL 파싱
 - [x] `src/api.py` — fetch_chatChannelId, fetch_channelName, fetch_accessToken
 - [x] `src/cmd_type.py` — CHZZK_CHAT_CMD 상수
-- [ ] URL 입력 → 32자 hex 추출
-- [ ] 연결 버튼 → API 호출 → 상태 갱신
-- [ ] 테스트: 실제 UID → "연결 준비 완료" 확인
+- [x] URL 입력 → 32자 hex 추출
+- [x] 연결 버튼 → API 호출 → 상태 갱신
+- [x] 테스트: pytest 8/8 통과 (URL 파싱 7 + API 호출 1)
 
 ## Step 3: WebSocket ChatWorker
-- [ ] `src/chat_worker.py` — threading.Thread 기반
-- [ ] 연결/해제 토글
-- [ ] 테스트: 실제 방송 연결 → 터미널에 메시지 print
+- [x] `src/chat_worker.py` — async 클래스 (page.run_task()로 실행)
+- [x] 연결/해제 토글
+- [x] 테스트: 실제 방송 연결 → 터미널에 메시지 print
 
-## Step 4: 기본 채팅 표시
-- [ ] chat_data → ft.Text Row → ListView
-- [ ] auto_scroll 확인
-- [ ] 테스트: 실시간 채팅 표시
+## Step 4: 기본 채팅 표시 + 닉네임 색상
+- [x] chat_data → ft.Text Row → ListView
+- [x] auto_scroll (ListView auto_scroll=True)
+- [x] COLOR_CODE_MAP (SG001~SG009) + USER_COLOR_PALETTE (12색 해시)
+- [x] 후원 메시지 배경색/[후원] prefix
+- [x] 테스트: flet run 실시간 채팅 표시 확인
 
-## Step 5: 닉네임 색상 + 후원 구분
-- [ ] COLOR_CODE_MAP + USER_COLOR_PALETTE
-- [ ] 후원 메시지 배경색/prefix
-- [ ] 테스트: 색상, 후원 구분 확인
+## Step 5: (Step 4에 통합됨)
+
+## asyncio 전환 (Step 3~4 사이 핫픽스) ✅
+
+threading.Thread에서 page.update() 호출 시 UI 미갱신 버그 해결.
+- [x] `chat_worker.py`: threading.Thread → async 클래스 + websockets(비동기)
+- [x] `main.py`: async def main() + page.run_task(worker.run)
+- [x] 연결해제 버튼 동작 수정 (connect_btn.disabled = False)
+- [x] flet run 실시간 채팅 표시 확인 (포커스 이동 없이 즉시 갱신)
 
 ## Step 6: 채팅 로깅
 - [ ] `src/chat_logger.py`
 - [ ] 날짜별 파일, 롤오버
 - [ ] 테스트: 로그 파일 생성/내용 확인
++ [ ] on_recieve_chat 시에 부드러운 스크롤이 아니라, 즉각적인 스크롤로 변경
 
 ## Step 7: 배지 + 이모지
 - [ ] 배지 MD5 캐시 → ft.Image
