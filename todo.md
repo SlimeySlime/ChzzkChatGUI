@@ -1,93 +1,70 @@
-# ChzzkChat TODO
-# 한 항목당 최대 두줄로 정리합니다.
-# 수정 내역은 Changelog 항목에, 완전히 반영된 내역은 CLAUDE.md 에 정리합니다.
+# ChzzkChat Flet 마이그레이션 체크리스트
 
-## Flet 마이그레이션 (진행중)
+백지에서 재시작. 기능 1~2개씩 구현 + 테스트 반복.
 
-PyQt6 → Python Flet(Flutter) 전환. PyQt6 원본은 `pyqt6_legacy/` 에 보관.
+## Step 1: 설정 + 쿠키 로딩
+- [x] `src/config.py` — 경로 상수, .env 파싱
+- [x] `src/main.py` — cookies.json 로드, 에러 시 스낵바
+- [x] 테스트: 쿠키 있을 때/없을 때 동작 확인
 
-### Phase 1: 프로젝트 구조 + ChatWorker ✅
-- [x] pyproject.toml 의존성 추가 (requests, websockets)
-- [x] api.py, cmd_type.py → src/ 복사
-- [x] PyQt6 파일 → pyqt6_legacy/ 이동
-- [x] src/chat_worker.py — QThread→threading.Thread, pyqtSignal→콜백, websockets.sync
+## Step 2: API 레이어 + URL 파싱
+- [x] `src/api.py` — fetch_chatChannelId, fetch_channelName, fetch_accessToken
+- [x] `src/cmd_type.py` — CHZZK_CHAT_CMD 상수
+- [ ] URL 입력 → 32자 hex 추출
+- [ ] 연결 버튼 → API 호출 → 상태 갱신
+- [ ] 테스트: 실제 UID → "연결 준비 완료" 확인
 
-### Phase 2: 코어 채팅 UI ✅
-- [x] src/main.py — Flet 앱 진입점 (cookies.json 로드)
-- [x] src/chat_view.py — URL 입력, 연결/해제, ListView 채팅, AppBar 메뉴
-- [x] 닉네임 색상 (COLOR_CODE_MAP + USER_COLOR_PALETTE)
-- [x] 후원 메시지 배경색 구분
+## Step 3: WebSocket ChatWorker
+- [ ] `src/chat_worker.py` — threading.Thread 기반
+- [ ] 연결/해제 토글
+- [ ] 테스트: 실제 방송 연결 → 터미널에 메시지 print
 
-### Phase 3: 배지 + 이모지 + 닉네임 클릭 ✅
-- [x] 배지: ft.Image(src=url) 닉네임 앞
-- [x] 이모지: {:name:} → Text/Image 분할
-- [x] 닉네임 클릭 → UserChatDialog (AlertDialog)
+## Step 4: 기본 채팅 표시
+- [ ] chat_data → ft.Text Row → ListView
+- [ ] auto_scroll 확인
+- [ ] 테스트: 실시간 채팅 표시
 
-### Phase 4: 검색 + 후원 전용 모드 ✅
-- [x] Ctrl+F 검색 바, 하이라이트, 이전/다음
-- [x] 후원 전용 필터 토글
+## Step 5: 닉네임 색상 + 후원 구분
+- [ ] COLOR_CODE_MAP + USER_COLOR_PALETTE
+- [ ] 후원 메시지 배경색/prefix
+- [ ] 테스트: 색상, 후원 구분 확인
 
-### Phase 5: 로깅 + 메모리 관리 + 설정 ✅
-- [x] src/chat_logger.py — 로그 파일 기록
-- [x] 메모리 제한 (표시 1만건, 유저당 500건)
-- [x] 설정 다이얼로그 (폰트 크기)
-- [x] 버그 리포트 (mailto:)
+## Step 6: 채팅 로깅
+- [ ] `src/chat_logger.py`
+- [ ] 날짜별 파일, 롤오버
+- [ ] 테스트: 로그 파일 생성/내용 확인
 
-### 의도적 제외
+## Step 7: 배지 + 이모지
+- [ ] 배지 MD5 캐시 → ft.Image
+- [ ] 이모지 {:name:} → ft.Image
+- [ ] 테스트: 구독 배지, 이모지 렌더링
+
+## Step 8: 메모리 관리 + 후원 필터
+- [ ] 1만건 제한, 유저당 500건
+- [ ] 후원 전용 보기 토글
+- [ ] 채팅 초기화
+- [ ] 테스트: 메모리, 필터 동작
+
+## Step 9: 검색 + 닉네임 클릭 + 다이얼로그
+- [ ] Ctrl+F 검색 바
+- [ ] 닉네임 클릭 → UserChatDialog
+- [ ] 설정/버그 리포트 다이얼로그
+- [ ] 테스트: 검색, 팝업, 설정 적용
+
+## Step 10: 마무리 + 빌드
+- [ ] 종료 처리 (워커 정리, 설정 저장)
+- [ ] flet build 테스트
+- [ ] 통합 테스트
+
+## 의도적 제외
 - 시스템 트레이 (Flet 미지원)
 - 최신채팅 오버레이 (나중에 ft.Stack)
-- 창 크기 저장/복원 (Flet 자체 관리)
 - PyInstaller → `flet build` 사용
 
-## 마이그레이션 이후 문제
-메시지 수신 속도가 느리고, 일부 메시지는 소실됨. 배지 이미지도 나오지않고 있지만,
-어느부분이 문제가 있는지 확인은 어려움 (터미널상 에러 로그 안나옴)
-    pyqt6 버전이 훨씬 빠르고 안정적인 것 같아서 고민이 됨
-    - 배포가 어렵지만 pyqt6 버전으로 갈까. 배포와 업데이트 편의를 위해서라도 Flet 으로 할까
-
-log 기록에서 logger를 처음 지정해줄때 생기는, == 채팅 수집 시간
-메시지가 로깅시에 매번 기록되고있음
-(e.g) 
-=== 채팅 수집 시작: 2026-02-09 15:18:38 ===
-[15:18:37][채팅][bdf6c0a9a0e72ff77440c7d728a5ea88] ㅇELIㅇ: 어어~~~~~어~
-
-=== 채팅 수집 시작: 2026-02-09 15:18:40 ===
-[15:18:40][채팅][7fc9dac73043f7f6281eac0357925ee3] 우리집금붕어fXukumfXukum: 와..
-[15:18:40][채팅][0494eb4493e889c919ca36cced24cccf] 탄산음료: 못참고 홈런을 그만ㅋㅋㅋㅋㅋㅋ
-
-## 마이그레이션 이후 테스트 해볼것
-- 배포 테스트 
-    리눅스와 윈도우 버전 빌드 후 실행 테스트
-- 성능 테스트 
-    Flet은 어떻게 여러가지 테스트를 해보지?
-- 이모지 GIF 애니메이션
-    pyqt6 로는 어려웠던 GIF 이모티콘 채팅 구현의 꿈
-- 이전에 vevn를 사용하던걸 CLAUDE.md에 적지않아서, 기본 python3인 
-
 ## 나중에
-
 - [ ] 성능 테스트 — MAX_DISPLAY_MESSAGES / MAX_USER_MESSAGES 임계값 검증
 - [ ] 자동 업데이트 — GitHub Releases 버전 체크 + 알림
 - [ ] 이모지 GIF 애니메이션
 - [ ] 다크/라이트 테마 전환
 - [ ] 여러 스트리머 동시 모니터링 (탭)
 - [ ] 빌드 자동화 스크립트
-
----
-
-## 완료
-
-- [x] 버그리포트 기능 — 메뉴바 추가, .env 메일 설정, mailto: 전송 (2026-02-09)
-- [x] 채팅 검색 (Ctrl+F) — 검색 바 토글, 하이라이트, 이전/다음 이동 (2026-02-09)
-- [x] 후원 전용 보기 모드 — 토글로 후원 채팅만 필터링, all_messages 재렌더링 (2026-02-09)
-- [x] 서버 연동 롤백 — API 인증/key/서버 전송 코드 제거 (2026-02-09)
-- [x] 채팅 메모리 관리 — 표시 1만건, 유저당 500건 제한 (2026-02-09)
-- [x] URL 파싱 확장 — 32자 hex 추출, chzzk.naver.com/live 버그 수정 (2026-02-09)
-- [x] bare except 로깅 — debug/warning 레벨로 에러 기록 (2026-02-09)
-- [x] 채팅 수동 클리어 — 옵션 메뉴 '채팅 내역 초기화' (2026-02-09)
-- [x] 코드 모듈화 — main.py + src/ 구조 (2025-01-30)
-- [x] PyInstaller 빌드 (2025-01-30)
-- [x] 설정 메뉴 (폰트 크기)
-- [x] 이모지 표시 (정적 이미지)
-- [x] 로그 파일명: `log/{channel_name}/YYYY-MM-DD.log`
-- [x] 창 크기 저장/복원

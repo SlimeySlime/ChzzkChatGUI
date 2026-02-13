@@ -13,7 +13,17 @@
       "Bash(D:/anaconda3/Scripts/conda.exe search python)",
       "Bash(git add:*)",
       "Bash(tree:*)",
-      "Bash(.venv/bin/python:*)"
+      "Bash(.venv/bin/python:*)",
+      "Bash(source:*)",
+      "Bash(python3:*)",
+      "Bash(pip show:*)",
+      "WebFetch(domain:docs.flet.dev)",
+      "WebFetch(domain:pub.dev)",
+      "WebFetch(domain:flet.dev)",
+      "Bash(pip install:*)",
+      "Bash(timeout 10 flet run:*)",
+      "Bash(\"/home/jinsu/frogs/Server and Chat/ChzzkChat/.venv/bin/python\" -c \"import flet; print\\(''flet'', flet.version.version\\)\")",
+      "Bash(timeout 8 .venv/bin/flet run:*)"
     ]
   }
 }

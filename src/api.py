@@ -1,48 +1,39 @@
+"""Chzzk API 호출"""
 import requests
 
 HEADERS = {'User-Agent': ''}
 
+
 def fetch_chatChannelId(streamer: str, cookies: dict) -> str:
     url = f'https://api.chzzk.naver.com/polling/v2/channels/{streamer}/live-status'
-    try:
-        response = requests.get(url, cookies=cookies, headers=HEADERS)
-        response.raise_for_status()
-        response = response.json()
+    response = requests.get(url, cookies=cookies, headers=HEADERS)
+    response.raise_for_status()
+    data = response.json()
+    chat_channel_id = data['content']['chatChannelId']
+    if chat_channel_id is None:
+        raise ValueError('chatChannelId가 없습니다 (방송이 꺼져 있을 수 있음)')
+    return chat_channel_id
 
-        chatChannelId = response['content']['chatChannelId']    # eg. N2G4yj
-        assert chatChannelId!=None
-        return chatChannelId
-    except Exception as e:
-        raise e
 
 def fetch_channelName(streamer: str) -> str:
     url = f'https://api.chzzk.naver.com/service/v1/channels/{streamer}'
-    try:
-        response = requests.get(url, headers=HEADERS)
-        response.raise_for_status()
-        response = response.json()
-        return response['content']['channelName']
-    except Exception as e:
-        raise e
+    response = requests.get(url, headers=HEADERS)
+    response.raise_for_status()
+    data = response.json()
+    return data['content']['channelName']
 
 
-def fetch_accessToken(chatChannelId, cookies: dict) -> str:
+def fetch_accessToken(chatChannelId: str, cookies: dict) -> tuple[str, str]:
     url = f'https://comm-api.game.naver.com/nng_main/v1/chats/access-token?channelId={chatChannelId}&chatType=STREAMING'
-    try:
-        response = requests.get(url, cookies=cookies, headers=HEADERS)
-        response.raise_for_status()
-        response = response.json()
-        return response['content']['accessToken'], response['content']['extraToken']
-    except Exception as e:
-        raise e
+    response = requests.get(url, cookies=cookies, headers=HEADERS)
+    response.raise_for_status()
+    data = response.json()
+    return data['content']['accessToken'], data['content']['extraToken']
 
 
 def fetch_userIdHash(cookies: dict) -> str:
     url = 'https://comm-api.game.naver.com/nng_main/v1/user/getUserStatus'
-    try:
-        response = requests.get(url, cookies=cookies, headers=HEADERS)
-        response.raise_for_status()
-        response = response.json()
-        return response['content']['userIdHash']
-    except Exception as e:
-        raise e
+    response = requests.get(url, cookies=cookies, headers=HEADERS)
+    response.raise_for_status()
+    data = response.json()
+    return data['content']['userIdHash']
