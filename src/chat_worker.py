@@ -129,7 +129,7 @@ class ChatWorker:
                     continue
 
                 for chat_data in raw_message['bdy']:
-                    self._process_chat_data(chat_data, chat_type)
+                    await self._process_chat_data(chat_data, chat_type)
 
             except websockets.ConnectionClosed:
                 if self.running:
@@ -148,7 +148,8 @@ class ChatWorker:
                         self.on_status_callback('재연결 실패')
                         break
 
-    def _process_chat_data(self, chat_data, chat_type):
+    # 인스턴트 스크롤링을 위해 await 적용
+    async def _process_chat_data(self, chat_data, chat_type):
         """개별 채팅 데이터 처리"""
         color_code = None
         badges = []
@@ -199,7 +200,7 @@ class ChatWorker:
         except Exception:
             logger.debug('extras 파싱 실패', exc_info=True)
 
-        self.on_chat_receive_callback({
+        await self.on_chat_receive_callback({
             'time': msg_time_str,
             'type': chat_type,
             'uid': chat_data['uid'],

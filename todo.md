@@ -36,11 +36,12 @@ threading.Thread에서 page.update() 호출 시 UI 미갱신 버그 해결.
 - [x] 연결해제 버튼 동작 수정 (connect_btn.disabled = False)
 - [x] flet run 실시간 채팅 표시 확인 (포커스 이동 없이 즉시 갱신)
 
-## Step 6: 채팅 로깅
-- [ ] `src/chat_logger.py`
-- [ ] 날짜별 파일, 롤오버
-- [ ] 테스트: 로그 파일 생성/내용 확인
-+ [ ] on_recieve_chat 시에 부드러운 스크롤이 아니라, 즉각적인 스크롤로 변경
+## Step 6: 채팅 로깅 ✅
+- [x] `src/chat_logger.py` — ChatLogger 클래스 (setup/log/close)
+- [x] 날짜별 파일 (`log/{channel}/YYYY-MM-DD.log`), 롤오버
+- [x] 테스트: 로그 파일 생성/내용 확인
+- [x] on_chat_received 즉각 스크롤 (auto_scroll=False + await scroll_to(duration=0))
+- [x] on_chat_received async 전환 (scroll_to가 코루틴)
 
 ## Step 7: 배지 + 이모지
 - [ ] 배지 MD5 캐시 → ft.Image

@@ -16,6 +16,7 @@ import re
 
 import flet as ft
 
+from chat_logger import ChatLogger
 from chat_worker import ChatWorker
 from config import COOKIES_PATH
 
@@ -82,10 +83,11 @@ async def main(page: ft.Page):
 
     # ── ChatWorker 상태 ──
     worker = None
+    chat_log = ChatLogger()
 
     # ChatWorker가 page.run_task()로 같은 이벤트 루프에서 실행되므로
     # 아래 콜백에서 page.update() 호출이 안전함 (스레드 경합 없음)
-    def on_chat_received(chat_data):
+    async def on_chat_received(chat_data):
         is_donation = chat_data['type'] == '후원'
 
         # 닉네임 색상
@@ -142,7 +144,9 @@ async def main(page: ft.Page):
             widget = row
 
         chat_list.controls.append(widget)
+        chat_log.log(chat_data)
         page.update()
+        await chat_list.scroll_to(offset=-1, duration=0)
 
     def on_status_changed(msg):
         if '연결 완료' in msg:
@@ -150,6 +154,8 @@ async def main(page: ft.Page):
             connect_btn.content.value = "해제"
             connect_btn.bgcolor = ft.Colors.RED_700
             connect_btn.disabled = False
+            if worker:
+                chat_log.setup(worker.channelName)
         elif '연결 실패' in msg or '재연결 실패' in msg:
             status_text.color = ft.Colors.RED_400
             connect_btn.content.value = "연결"
@@ -168,6 +174,7 @@ async def main(page: ft.Page):
         if worker and worker.running:
             await worker.stop()
             worker = None
+            chat_log.close()
             connect_btn.content.value = "연결"
             connect_btn.bgcolor = ft.Colors.GREEN
             connect_btn.disabled = False
@@ -234,7 +241,7 @@ async def main(page: ft.Page):
     chat_list = ft.ListView(
         expand=True,
         spacing=2,
-        auto_scroll=True,
+        auto_scroll=False,
         padding=ft.Padding.symmetric(horizontal=10, vertical=5),
     )
 

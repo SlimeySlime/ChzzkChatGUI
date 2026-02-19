@@ -140,3 +140,27 @@ page.run_task(worker.run)
 ### 의존성 변경
 - `websocket-client` 더 이상 불필요 (동기 WebSocket 라이브러리)
 - `websockets>=16.0` 사용 (비동기, pyproject.toml에 기존 포함)
+
+---
+
+## Step 6: 채팅 로깅 + 즉각 스크롤 ✅
+
+### 구현 내용
+
+**`src/chat_logger.py` (신규)**
+- `ChatLogger` 클래스: `setup(channel_name)` / `log(chat_data)` / `close()`
+- Python `logging` 모듈 기반, `log/{channel_name}/YYYY-MM-DD.log` 경로
+- 날짜 변경 시 자동 롤오버 (`_update_handler()`)
+- 포맷: `[HH:MM:SS][채팅][uid] 닉네임: 메시지`
+
+**`src/main.py` 수정**
+- `ChatLogger` 연동: 연결 완료 → `setup()`, 채팅 수신 → `log()`, 해제 → `close()`
+- `on_chat_received` → `async def` 전환 (scroll_to가 코루틴이므로)
+- `auto_scroll=False` + `await chat_list.scroll_to(offset=-1, duration=0)` → 즉각 스크롤
+
+**`src/chat_worker.py` 수정**
+- `_process_chat_data` → `async def` + `await self.on_chat_receive_callback(...)` (콜백이 async이므로)
+
+### 비고
+- `auto_scroll=True`가 부드러운 애니메이션을 강제 적용하여, 끄고 수동 scroll_to로 대체
+- `scroll_to()`는 Flet 0.80에서 코루틴 → 콜백 체인 전체를 async로 전환 필요
