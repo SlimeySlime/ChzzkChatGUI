@@ -167,6 +167,41 @@ page.run_task(worker.run)
 
 ---
 
+## Step 8: 메모리 관리 + 후원 필터 ✅
+
+### 구현 내용
+
+**`src/main.py` 수정**
+- 전역 상수: `MAX_DISPLAY_MESSAGES = 10_000`, `MAX_USER_MESSAGES = 500`
+- `all_items: list[tuple[bool, ft.Control]]` — 전체 메시지 (is_donation, widget) 보관
+- `user_messages: dict[str, list]` — 유저별 chat_data 목록 (Step 9 UserChatDialog용)
+- `donation_only: bool` — 후원 전용 보기 상태
+
+**`on_chat_received` 수정**
+- `uid` 변수 추출 후 `user_messages` 추적 + 500건 제한 (`del msgs[:-500]`)
+- `all_items.append((is_donation, widget))` 후 10000건 초과 시 `pop(0)` + controls 동기화
+- `donation_only` True이면 후원이 아닌 채팅은 controls에 추가 안 함
+
+**추가 함수**
+- `toggle_donation_only(e)`: donation_only 플래그 토글 + 메뉴 텍스트 "후원만 보기 ✓" 갱신 + chat_list 재구성
+- `clear_chat(e)`: all_items, user_messages, chat_list.controls 초기화
+
+**메뉴 연결**
+- `donation_menu_item` 변수 분리 → `toggle_donation_only`로 on_click 연결
+- "채팅 내역 초기화" → `clear_chat`
+- "종료" → `page.window.close()`
+
+**자동 스크롤 감지**
+- `at_bottom: bool = True` 상태 변수 (초기: 맨 아래)
+- `on_chat_list_scroll(e)`: `chat_list.on_scroll` 콜백 — `e.pixels >= e.max_scroll_extent - 10` 로 맨 아래 여부 판단 (threshold 10px)
+- `on_chat_received` 마지막: `if at_bottom: await chat_list.scroll_to(...)` — 사용자가 위로 스크롤 시 자동으로 잠금, 맨 아래로 내리면 자동으로 재개
+- 메뉴 수동 토글 없음 (스크롤 위치에 따라 자동 결정)
+
+### 비고
+- `toggle_donation_only`가 `donation_menu_item`보다 먼저 정의되어도, Python 클로저 특성상 호출 시점에 변수를 찾으므로 정상 동작
+
+---
+
 ## Step 7: 배지 + 이모지 ✅
 
 ### 구현 내용
@@ -183,3 +218,47 @@ page.run_task(worker.run)
 ### 비고
 - GIF 이모지 재생은 Flet(Flutter) 마이그레이션의 핵심 동기 중 하나 — PyQt6에서는 불가능했음
 - 이미지 다운로드 실패 시 원본 텍스트(`{:name:}`) 유지
+
+---
+
+## Step 9-A: 검색 기능 ✅
+
+### 구현 내용
+
+**`src/main.py` 수정**
+
+**데이터 구조 변경**
+- `all_items` 타입: `list[tuple[bool, ft.Control]]` → `list[tuple[bool, ft.Control, dict]]`
+  - 세 번째 원소로 `chat_data` 추가 → 검색 필터에서 닉네임/메시지 접근 가능
+
+**헬퍼 함수 추가**
+- `_item_matches_filter(is_don, cd)`: `donation_only` AND `search_query` 조합으로 표시 여부 판단
+  - `donation_only=True`이면 후원만 통과
+  - `search_query`가 있으면 닉네임/메시지 대소문자 무시 포함 검색
+- `_rebuild_chat_list()`: 현재 필터로 `chat_list.controls` 전체 재구성 + `page.update()`
+  - `toggle_donation_only`도 이 함수로 통합
+
+**검색 상태 변수**
+- `search_query: str = ""` — 현재 검색어
+
+**검색 함수**
+- `toggle_search(e=None)`: 검색 바 `visible` 토글
+  - 열릴 때: `search_field.focus()` 호출
+  - 닫힐 때: `search_query = ""`, `search_field.value = ""` 초기화 + `_rebuild_chat_list()`
+- `on_search_changed(e)`: `search_field.on_change` 콜백 → `search_query` 갱신 + `_rebuild_chat_list()`
+- `on_keyboard_event(e)`: `page.on_keyboard_event` 핸들러 — `Ctrl+F` → `toggle_search()`
+
+**메모리 관리 수정**
+- 10000건 초과 제거 시: `removed_widget in chat_list.controls` 체크 → `.remove()` 로 정확한 위젯 제거
+  - 기존 `pop(0)` 방식은 검색/필터 상태와 controls 순서가 어긋날 수 있음
+
+**검색 UI**
+- `search_field = ft.TextField(hint_text="닉네임 또는 메시지 검색...", on_change=on_search_changed)`
+- `search_row = ft.Row([Icon(SEARCH), search_field, IconButton(CLOSE)], visible=False)`
+  - 닫기 버튼 → `toggle_search` 호출
+  - 레이아웃: `status_text` 아래, `chat_container` 위
+
+### 비고
+- 검색과 후원 필터는 AND 조건 (둘 다 적용됨)
+- `clear_chat`도 `search_query`/`search_field.value` 초기화 포함
+- `_item_matches_filter`가 두 조건을 단일 함수로 관리하므로 이후 필터 추가가 쉬움

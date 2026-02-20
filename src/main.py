@@ -23,6 +23,9 @@ from chat_logger import ChatLogger
 from chat_worker import ChatWorker
 from config import COOKIES_PATH, BADGE_CACHE_DIR, EMOJI_CACHE_DIR
 
+MAX_DISPLAY_MESSAGES = 10_000
+MAX_USER_MESSAGES = 500
+
 # ── 닉네임 색상 ──
 COLOR_CODE_MAP = {
     'SG001': '#8bff00', 'SG002': '#00ffff', 'SG003': '#ff00ff',
@@ -100,6 +103,7 @@ async def main(page: ft.Page):
     page.padding = 0
 
     # ── 쿠키 로드 ──
+    # 현재는 websocket 연결에 필요한 최소한의 Naver 쿠키만 요구. (NID_AUT, NID_SES)
     cookies = {}
     if os.path.exists(COOKIES_PATH):
         try:
@@ -123,16 +127,46 @@ async def main(page: ft.Page):
     worker = None
     chat_log = ChatLogger()
 
+    # ── 채팅 메모리 ──
+    all_items: list[tuple[bool, ft.Control, dict]] = []  # (is_donation, widget, chat_data)
+    user_messages: dict[str, list] = {}                  # uid → [chat_data, ...]
+    donation_only = False
+    at_bottom = True  # 스크롤이 맨 아래에 있는지 여부
+    search_query = ""
+
+    def _item_matches_filter(is_don: bool, cd: dict) -> bool:
+        """donation_only + search_query 조합으로 표시 여부 판단"""
+        if donation_only and not is_don:
+            return False
+        if search_query:
+            q = search_query.lower()
+            if q not in cd.get('nickname', '').lower() and q not in cd.get('message', '').lower():
+                return False
+        return True
+
+    def _rebuild_chat_list():
+        """현재 필터(donation_only + search_query)로 chat_list 전체 재구성"""
+        chat_list.controls[:] = [w for is_don, w, cd in all_items if _item_matches_filter(is_don, cd)]
+        page.update()
+
     # ChatWorker가 page.run_task()로 같은 이벤트 루프에서 실행되므로
     # 아래 콜백에서 page.update() 호출이 안전함 (스레드 경합 없음)
     async def on_chat_received(chat_data):
+        nonlocal donation_only, at_bottom, search_query
         is_donation = chat_data['type'] == '후원'
+        uid = chat_data['uid']
+
+        # ── 유저별 메시지 추적 ──
+        msgs = user_messages.setdefault(uid, [])
+        msgs.append(chat_data)
+        if len(msgs) > MAX_USER_MESSAGES:
+            del msgs[:-MAX_USER_MESSAGES]
 
         # 닉네임 색상
         if is_donation:
             nick_color = '#ffcc00'
         else:
-            nick_color = get_user_color(chat_data['uid'], chat_data.get('colorCode'))
+            nick_color = get_user_color(uid, chat_data.get('colorCode'))
 
         # 시간
         time_text = ft.Text(
@@ -223,10 +257,21 @@ async def main(page: ft.Page):
         else:
             widget = row
 
-        chat_list.controls.append(widget)
+        # ── 메모리 관리 ──
+        all_items.append((is_donation, widget, chat_data))
+        if len(all_items) > MAX_DISPLAY_MESSAGES:
+            _, removed_widget, _ = all_items.pop(0)
+            # 현재 필터에서 표시 중이었던 위젯만 controls에서 제거
+            if removed_widget in chat_list.controls:
+                chat_list.controls.remove(removed_widget)
+
+        visible = _item_matches_filter(is_donation, chat_data)
+        if visible:
+            chat_list.controls.append(widget)
         chat_log.log(chat_data)
         page.update()
-        await chat_list.scroll_to(offset=-1, duration=0)
+        if at_bottom and visible:
+            await chat_list.scroll_to(offset=-1, duration=0)
 
     def on_status_changed(msg):
         if '연결 완료' in msg:
@@ -283,6 +328,43 @@ async def main(page: ft.Page):
         worker = ChatWorker(uid, cookies, on_chat_received, on_status_changed)
         page.run_task(worker.run)  # Flet 이벤트 루프에서 async 실행
 
+    def toggle_donation_only(e):
+        nonlocal donation_only
+        donation_only = not donation_only
+        donation_menu_item.content.value = "후원만 보기 ✓" if donation_only else "후원만 보기"
+        _rebuild_chat_list()
+
+    def clear_chat(e):
+        nonlocal search_query
+        all_items.clear()
+        user_messages.clear()
+        chat_list.controls.clear()
+        search_query = ""
+        search_field.value = ""
+        page.update()
+
+    def toggle_search(e=None):
+        nonlocal search_query
+        search_row.visible = not search_row.visible
+        if search_row.visible:
+            search_field.focus()
+        else:
+            search_query = ""
+            search_field.value = ""
+            _rebuild_chat_list()
+        page.update()
+
+    def on_search_changed(e):
+        nonlocal search_query
+        search_query = search_field.value or ""
+        _rebuild_chat_list()
+
+    async def on_keyboard_event(e: ft.KeyboardEvent):
+        if e.ctrl and e.key == "F":
+            toggle_search()
+
+    page.on_keyboard_event = on_keyboard_event
+
     # ── 상단: URL 입력 영역 ──
     url_input = ft.TextField(
         label="스트리머 UID",
@@ -317,12 +399,43 @@ async def main(page: ft.Page):
         color=ft.Colors.GREY_500,
     )
 
+    # ── 검색 바 (Ctrl+F로 토글) ──
+    search_field = ft.TextField(
+        hint_text="닉네임 또는 메시지 검색...",
+        expand=True,
+        height=36,
+        border_color=ft.Colors.GREY_700,
+        focused_border_color=ft.Colors.BLUE_400,
+        text_size=13,
+        on_change=on_search_changed,
+    )
+
+    search_row = ft.Row(
+        controls=[
+            ft.Icon(ft.Icons.SEARCH, size=16, color=ft.Colors.GREY_500),
+            search_field,
+            ft.IconButton(
+                icon=ft.Icons.CLOSE,
+                icon_size=16,
+                tooltip="검색 닫기 (Esc)",
+                on_click=toggle_search,
+            ),
+        ],
+        spacing=4,
+        visible=False,
+    )
+
+    def on_chat_list_scroll(e: ft.OnScrollEvent):
+        nonlocal at_bottom
+        at_bottom = e.pixels >= e.max_scroll_extent - 10
+
     # ── 채팅 표시 영역 ──
     chat_list = ft.ListView(
         expand=True,
         spacing=2,
         auto_scroll=False,
         padding=ft.Padding.symmetric(horizontal=10, vertical=5),
+        on_scroll=on_chat_list_scroll,
     )
 
     chat_container = ft.Container(
@@ -334,23 +447,28 @@ async def main(page: ft.Page):
     )
 
     # ── 메뉴바 ──
+    donation_menu_item = ft.MenuItemButton(
+        content=ft.Text("후원만 보기"),
+        leading=ft.Icon(ft.Icons.VOLUNTEER_ACTIVISM, size=18),
+        on_click=toggle_donation_only,
+    )
+
     menubar = ft.MenuBar(
         controls=[
             ft.SubmenuButton(
                 content=ft.Text("옵션", size=13),
                 controls=[
-                    ft.MenuItemButton(
-                        content=ft.Text("후원만 보기"),
-                        leading=ft.Icon(ft.Icons.VOLUNTEER_ACTIVISM, size=18),
-                    ),
+                    donation_menu_item,
                     ft.MenuItemButton(
                         content=ft.Text("채팅 내역 초기화"),
                         leading=ft.Icon(ft.Icons.DELETE_SWEEP, size=18),
+                        on_click=clear_chat,
                     ),
                     ft.Divider(height=1),
                     ft.MenuItemButton(
                         content=ft.Text("종료"),
                         leading=ft.Icon(ft.Icons.EXIT_TO_APP, size=18),
+                        on_click=lambda e: page.window.close(),
                     ),
                 ],
             ),
@@ -388,6 +506,7 @@ async def main(page: ft.Page):
                         controls=[
                             connect_row,
                             status_text,
+                            search_row,
                             chat_container,
                         ],
                         spacing=8,

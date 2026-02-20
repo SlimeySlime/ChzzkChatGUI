@@ -49,27 +49,33 @@ threading.Thread에서 page.update() 호출 시 UI 미갱신 버그 해결.
 - [x] GIF 이모지 애니메이션 재생 확인
 - [x] 테스트: flet run 실시간 배지/이모지 렌더링 확인
 
-## Step 8: 메모리 관리 + 후원 필터
-- [ ] 1만건 제한, 유저당 500건
-- [ ] 후원 전용 보기 토글
-- [ ] 채팅 초기화
-- [ ] 테스트: 메모리, 필터 동작
+## Step 8: 메모리 관리 + 후원 필터 ✅
+- [x] 1만건 제한 (all_items 리스트 + pop(0))
+- [x] 유저당 500건 (user_messages dict + del msgs[:-500])
+- [x] 후원 전용 보기 토글 (donation_only 플래그 + chat_list 재구성)
+- [x] 채팅 초기화 (all_items/user_messages/chat_list.controls 초기화)
+- [x] 메뉴 연결: 후원만 보기, 채팅 내역 초기화, 종료
+- [x] 테스트: flet run 확인
+- [x] 새 채팅 스크롤 잠금 옵션 (옵션 메뉴 → 스크롤 잠금 토글)
 
 ## Step 9: 검색 + 닉네임 클릭 + 다이얼로그
-- [ ] Ctrl+F 검색 바
+- [x] Ctrl+F 검색 바 (닉네임/메시지 검색, donation_only AND 결합)
 - [ ] 닉네임 클릭 → UserChatDialog
-- [ ] 설정/버그 리포트 다이얼로그
-- [ ] 테스트: 검색, 팝업, 설정 적용
 
-## Step 10: 마무리 + 빌드
+## Step 10: 기타 기능 추가수정 
+- [ ] 설정/버그 리포트 다이얼로그
+- [ ] 후원 메시지 데이터에 금액도 추가
+
+## Step 11: 마무리 + 빌드
 - [ ] 종료 처리 (워커 정리, 설정 저장)
-- [ ] flet build 테스트
 - [ ] 통합 테스트
 
 ## 의도적 제외
 - 시스템 트레이 (Flet 미지원)
 - 최신채팅 오버레이 (나중에 ft.Stack)
 - PyInstaller → `flet build` 사용
+- [ ] flet build 테스트 - 추후 내가 직접 테스트
+
 
 ## 나중에
 - [ ] 성능 테스트 — MAX_DISPLAY_MESSAGES / MAX_USER_MESSAGES 임계값 검증
