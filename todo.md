@@ -43,10 +43,11 @@ threading.Thread에서 page.update() 호출 시 UI 미갱신 버그 해결.
 - [x] on_chat_received 즉각 스크롤 (auto_scroll=False + await scroll_to(duration=0))
 - [x] on_chat_received async 전환 (scroll_to가 코루틴)
 
-## Step 7: 배지 + 이모지
-- [ ] 배지 MD5 캐시 → ft.Image
-- [ ] 이모지 {:name:} → ft.Image
-- [ ] 테스트: 구독 배지, 이모지 렌더링
+## Step 7: 배지 + 이모지 ✅
+- [x] 배지 MD5 캐시 → ft.Image (최대 3개, asyncio.to_thread로 다운로드)
+- [x] 이모지 {:name:} → ft.Image (EMOJI_PATTERN 정규식 파싱)
+- [x] GIF 이모지 애니메이션 재생 확인
+- [x] 테스트: flet run 실시간 배지/이모지 렌더링 확인
 
 ## Step 8: 메모리 관리 + 후원 필터
 - [ ] 1만건 제한, 유저당 500건

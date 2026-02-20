@@ -164,3 +164,22 @@ page.run_task(worker.run)
 ### 비고
 - `auto_scroll=True`가 부드러운 애니메이션을 강제 적용하여, 끄고 수동 scroll_to로 대체
 - `scroll_to()`는 Flet 0.80에서 코루틴 → 콜백 체인 전체를 async로 전환 필요
+
+---
+
+## Step 7: 배지 + 이모지 ✅
+
+### 구현 내용
+
+**`src/main.py` 수정**
+- `_download_image(url, cache_dir, cache_dict)`: URL → MD5 해시 파일명으로 로컬 캐시
+  - `cache/badges/` 또는 `cache/emojis/` 에 `{md5hash}.png|.gif` 저장
+  - 메모리 캐시(`_badge_cache`, `_emoji_cache`)로 중복 다운로드 방지
+  - `asyncio.to_thread()`로 감싸서 이벤트 루프 블록 방지
+- 배지 렌더링: `chat_data['badges'][:3]` → `ft.Image(width=18, height=18)` (닉네임 앞)
+- 이모지 렌더링: `EMOJI_PATTERN = r'\{:([^:]+):\}'` → 메시지 split → 텍스트/이미지 교차 배치
+  - `ft.Image(width=20, height=20)` — GIF 애니메이션 자동 재생 (Flet/Flutter 기본 지원)
+
+### 비고
+- GIF 이모지 재생은 Flet(Flutter) 마이그레이션의 핵심 동기 중 하나 — PyQt6에서는 불가능했음
+- 이미지 다운로드 실패 시 원본 텍스트(`{:name:}`) 유지

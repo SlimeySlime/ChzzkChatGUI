@@ -10,15 +10,18 @@ async def main() 사용 이유:
   page.update()가 즉시 UI에 반영된다.
 """
 
+import asyncio
+import hashlib
 import json
 import os
 import re
 
+import requests
 import flet as ft
 
 from chat_logger import ChatLogger
 from chat_worker import ChatWorker
-from config import COOKIES_PATH
+from config import COOKIES_PATH, BADGE_CACHE_DIR, EMOJI_CACHE_DIR
 
 # ── 닉네임 색상 ──
 COLOR_CODE_MAP = {
@@ -40,6 +43,41 @@ def get_user_color(uid: str, color_code: str | None) -> str:
         return COLOR_CODE_MAP[color_code]
     idx = abs(hash(uid)) % len(USER_COLOR_PALETTE)
     return USER_COLOR_PALETTE[idx]
+
+
+# ── 이미지 캐시 ──
+_badge_cache: dict[str, str | None] = {}
+_emoji_cache: dict[str, str | None] = {}
+
+
+def _download_image(url: str, cache_dir: str, cache_dict: dict) -> str | None:
+    """URL → MD5 해시 파일명으로 로컬 캐시. 이미 있으면 즉시 반환."""
+    if url in cache_dict:
+        return cache_dict[url]
+
+    url_hash = hashlib.md5(url.encode()).hexdigest()
+    ext = '.gif' if '.gif' in url else '.png'
+    local_path = os.path.join(cache_dir, f'{url_hash}{ext}')
+
+    if os.path.exists(local_path):
+        cache_dict[url] = local_path
+        return local_path
+
+    try:
+        resp = requests.get(url, timeout=5)
+        if resp.status_code == 200:
+            with open(local_path, 'wb') as f:
+                f.write(resp.content)
+            cache_dict[url] = local_path
+            return local_path
+    except Exception:
+        pass
+
+    cache_dict[url] = None
+    return None
+
+
+EMOJI_PATTERN = re.compile(r'\{:([^:]+):\}')
 
 
 def extract_streamer_id(url_or_id: str) -> str:
@@ -105,6 +143,15 @@ async def main(page: ft.Page):
             no_wrap=True,
         )
 
+        # 배지 (최대 3개)
+        badge_controls = []
+        for badge_url in chat_data.get('badges', [])[:3]:
+            path = await asyncio.to_thread(
+                _download_image, badge_url, BADGE_CACHE_DIR, _badge_cache
+            )
+            if path:
+                badge_controls.append(ft.Image(src=path, width=18, height=18))
+
         # 닉네임
         prefix = "[후원] " if is_donation else ""
         nick_text = ft.Text(
@@ -116,18 +163,51 @@ async def main(page: ft.Page):
             no_wrap=True,
         )
 
-        # 메시지
-        msg_text = ft.Text(
-            f": {chat_data['message']}",
-            size=13,
-            color=ft.Colors.WHITE,
-            selectable=True,
-            expand=True,
-        )
+        # 메시지 (이모지 치환)
+        message = chat_data['message']
+        emojis = chat_data.get('emojis', {})
+        msg_controls = []
 
-        # 후원 메시지 배경
+        if emojis:
+            parts = EMOJI_PATTERN.split(message)
+            # parts: [text, emoji_name, text, emoji_name, ...]
+            for i, part in enumerate(parts):
+                if i % 2 == 0:
+                    # 텍스트 부분
+                    if part:
+                        sep = ": " if i == 0 and not msg_controls else ""
+                        msg_controls.append(ft.Text(
+                            f"{sep}{part}" if i == 0 else part,
+                            size=13, color=ft.Colors.WHITE, selectable=True,
+                        ))
+                else:
+                    # 이모지 이름
+                    if part in emojis:
+                        path = await asyncio.to_thread(
+                            _download_image, emojis[part], EMOJI_CACHE_DIR, _emoji_cache
+                        )
+                        if path:
+                            msg_controls.append(ft.Image(src=path, width=20, height=20))
+                            continue
+                    # 매칭 실패 시 원본 텍스트
+                    msg_controls.append(ft.Text(
+                        f"{{:{part}:}}", size=13, color=ft.Colors.WHITE, selectable=True,
+                    ))
+            # 첫 텍스트에 ": " 접두사
+            if msg_controls and isinstance(msg_controls[0], ft.Text):
+                if not msg_controls[0].value.startswith(": "):
+                    msg_controls[0].value = f": {msg_controls[0].value}"
+        else:
+            msg_controls.append(ft.Text(
+                f": {message}", size=13, color=ft.Colors.WHITE,
+                selectable=True, expand=True,
+            ))
+
+        # Row 조립: 시간 + 배지들 + 닉네임 + 메시지
+        controls = [time_text] + badge_controls + [nick_text] + msg_controls
+
         row = ft.Row(
-            controls=[time_text, nick_text, msg_text],
+            controls=controls,
             spacing=0,
             vertical_alignment=ft.CrossAxisAlignment.START,
         )
