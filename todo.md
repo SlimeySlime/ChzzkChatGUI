@@ -60,14 +60,20 @@ threading.Thread에서 page.update() 호출 시 UI 미갱신 버그 해결.
 
 ## Step 9: 검색 + 닉네임 클릭 + 다이얼로그
 - [x] Ctrl+F 검색 바 (닉네임/메시지 검색, donation_only AND 결합)
-- [ ] 닉네임 클릭 → UserChatDialog
+- [x] 닉네임 클릭 → UserChatDialog
 
-## Step 10: 기타 기능 추가수정 
-- [ ] 설정/버그 리포트 다이얼로그
-- [ ] 후원 메시지 데이터에 금액도 추가
+## Step 10: 설정 다이얼로그
+- [ ] 폰트 크기 조절 (settings.json 저장/로드)
+- [x] 타임스탬프 표시/숨기기 토글
+- [x] 배지 표시/숨기기 토글
+- [ ] 버그 리포트 다이얼로그
 
-## Step 11: 마무리 + 빌드
-- [ ] 종료 처리 (워커 정리, 설정 저장)
+## Step 11: 창 크기/위치 저장
+- [ ] 종료 시 창 크기/위치 settings.json 저장
+- [ ] 시작 시 settings.json에서 복원
+
+## Step 12: 마무리 + 빌드
+- [ ] 종료 처리 (워커 정리)
 - [ ] 통합 테스트
 
 ## 의도적 제외
@@ -78,6 +84,7 @@ threading.Thread에서 page.update() 호출 시 UI 미갱신 버그 해결.
 
 
 ## 나중에
+- [ ] 후원 메시지 데이터에 금액 추가
 - [ ] 성능 테스트 — MAX_DISPLAY_MESSAGES / MAX_USER_MESSAGES 임계값 검증
 - [ ] 자동 업데이트 — GitHub Releases 버전 체크 + 알림
 - [ ] 이모지 GIF 애니메이션

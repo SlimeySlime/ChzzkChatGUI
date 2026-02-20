@@ -28,15 +28,30 @@ MAX_USER_MESSAGES = 500
 
 # ── 닉네임 색상 ──
 COLOR_CODE_MAP = {
-    'SG001': '#8bff00', 'SG002': '#00ffff', 'SG003': '#ff00ff',
-    'SG004': '#ffff00', 'SG005': '#ff8800', 'SG006': '#ff0088',
-    'SG007': '#00aaff', 'SG008': '#aa00ff', 'SG009': '#ff0000',
+    "SG001": "#8bff00",
+    "SG002": "#00ffff",
+    "SG003": "#ff00ff",
+    "SG004": "#ffff00",
+    "SG005": "#ff8800",
+    "SG006": "#ff0088",
+    "SG007": "#00aaff",
+    "SG008": "#aa00ff",
+    "SG009": "#ff0000",
 }
 
 USER_COLOR_PALETTE = [
-    '#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4',
-    '#FFEAA7', '#DDA0DD', '#98D8C8', '#F7DC6F',
-    '#BB8FCE', '#82E0AA', '#F1948A', '#85C1E9',
+    "#FF6B6B",
+    "#4ECDC4",
+    "#45B7D1",
+    "#96CEB4",
+    "#FFEAA7",
+    "#DDA0DD",
+    "#98D8C8",
+    "#F7DC6F",
+    "#BB8FCE",
+    "#82E0AA",
+    "#F1948A",
+    "#85C1E9",
 ]
 
 
@@ -59,8 +74,8 @@ def _download_image(url: str, cache_dir: str, cache_dict: dict) -> str | None:
         return cache_dict[url]
 
     url_hash = hashlib.md5(url.encode()).hexdigest()
-    ext = '.gif' if '.gif' in url else '.png'
-    local_path = os.path.join(cache_dir, f'{url_hash}{ext}')
+    ext = ".gif" if ".gif" in url else ".png"
+    local_path = os.path.join(cache_dir, f"{url_hash}{ext}")
 
     if os.path.exists(local_path):
         cache_dict[url] = local_path
@@ -69,7 +84,7 @@ def _download_image(url: str, cache_dir: str, cache_dict: dict) -> str | None:
     try:
         resp = requests.get(url, timeout=5)
         if resp.status_code == 200:
-            with open(local_path, 'wb') as f:
+            with open(local_path, "wb") as f:
                 f.write(resp.content)
             cache_dict[url] = local_path
             return local_path
@@ -80,13 +95,13 @@ def _download_image(url: str, cache_dir: str, cache_dict: dict) -> str | None:
     return None
 
 
-EMOJI_PATTERN = re.compile(r'\{:([^:]+):\}')
+EMOJI_PATTERN = re.compile(r"\{:([^:]+):\}")
 
 
 def extract_streamer_id(url_or_id: str) -> str:
     """URL 또는 UID에서 스트리머 ID(32자 hex) 추출"""
     url_or_id = url_or_id.strip()
-    match = re.search(r'[a-f0-9]{32}', url_or_id)
+    match = re.search(r"[a-f0-9]{32}", url_or_id)
     if match:
         return match.group(0)
     return url_or_id
@@ -107,32 +122,40 @@ async def main(page: ft.Page):
     cookies = {}
     if os.path.exists(COOKIES_PATH):
         try:
-            with open(COOKIES_PATH, encoding='utf-8') as f:
+            with open(COOKIES_PATH, encoding="utf-8") as f:
                 data = json.load(f)
             if not isinstance(data, dict) or not data:
                 raise ValueError("빈 파일이거나 올바른 JSON 객체가 아닙니다")
             cookies = data
         except Exception as e:
-            page.show_dialog(ft.SnackBar(
-                ft.Text(f"cookies.json 파싱 실패: {e}"),
-                bgcolor=ft.Colors.RED_900,
-            ))
+            page.show_dialog(
+                ft.SnackBar(
+                    ft.Text(f"cookies.json 파싱 실패: {e}"),
+                    bgcolor=ft.Colors.RED_900,
+                )
+            )
     else:
-        page.show_dialog(ft.SnackBar(
-            ft.Text("cookies.json 파일이 없습니다. 네이버 인증 쿠키를 설정해주세요."),
-            bgcolor=ft.Colors.RED_900,
-        ))
+        page.show_dialog(
+            ft.SnackBar(
+                ft.Text(
+                    "cookies.json 파일이 없습니다. 네이버 인증 쿠키를 설정해주세요."
+                ),
+                bgcolor=ft.Colors.RED_900,
+            )
+        )
 
     # ── ChatWorker 상태 ──
     worker = None
     chat_log = ChatLogger()
 
     # ── 채팅 메모리 ──
-    all_items: list[tuple[bool, ft.Control, dict]] = []  # (is_donation, widget, chat_data)
-    user_messages: dict[str, list] = {}                  # uid → [chat_data, ...]
+    all_items: list[tuple[bool, ft.Control, dict, dict]] = []  # (is_donation, widget, chat_data, refs)
+    user_messages: dict[str, list] = {}  # uid → [chat_data, ...]
     donation_only = False
     at_bottom = True  # 스크롤이 맨 아래에 있는지 여부
     search_query = ""
+    show_timestamp = True  # 타임스탬프 표시 여부
+    show_badges = True  # 배지 표시 여부
 
     def _item_matches_filter(is_don: bool, cd: dict) -> bool:
         """donation_only + search_query 조합으로 표시 여부 판단"""
@@ -140,21 +163,25 @@ async def main(page: ft.Page):
             return False
         if search_query:
             q = search_query.lower()
-            if q not in cd.get('nickname', '').lower() and q not in cd.get('message', '').lower():
+            if (
+                q not in cd.get("nickname", "").lower()
+                and q not in cd.get("message", "").lower()
+            ):
                 return False
         return True
 
     def _rebuild_chat_list():
-        """현재 필터(donation_only + search_query)로 chat_list 전체 재구성"""
-        chat_list.controls[:] = [w for is_don, w, cd in all_items if _item_matches_filter(is_don, cd)]
+        """현재 필터(donation_only + search_query)로 visible 토글"""
+        for is_don, widget, cd, _ in all_items:
+            widget.visible = _item_matches_filter(is_don, cd)
         page.update()
 
     # ChatWorker가 page.run_task()로 같은 이벤트 루프에서 실행되므로
     # 아래 콜백에서 page.update() 호출이 안전함 (스레드 경합 없음)
     async def on_chat_received(chat_data):
         nonlocal donation_only, at_bottom, search_query
-        is_donation = chat_data['type'] == '후원'
-        uid = chat_data['uid']
+        is_donation = chat_data["type"] == "후원"
+        uid = chat_data["uid"]
 
         # ── 유저별 메시지 추적 ──
         msgs = user_messages.setdefault(uid, [])
@@ -164,9 +191,9 @@ async def main(page: ft.Page):
 
         # 닉네임 색상
         if is_donation:
-            nick_color = '#ffcc00'
+            nick_color = "#ffcc00"
         else:
-            nick_color = get_user_color(uid, chat_data.get('colorCode'))
+            nick_color = get_user_color(uid, chat_data.get("colorCode"))
 
         # 시간
         time_text = ft.Text(
@@ -175,16 +202,19 @@ async def main(page: ft.Page):
             color=ft.Colors.GREY_500,
             selectable=True,
             no_wrap=True,
+            visible=show_timestamp,
         )
 
         # 배지 (최대 3개)
         badge_controls = []
-        for badge_url in chat_data.get('badges', [])[:3]:
+        for badge_url in chat_data.get("badges", [])[:3]:
             path = await asyncio.to_thread(
                 _download_image, badge_url, BADGE_CACHE_DIR, _badge_cache
             )
             if path:
-                badge_controls.append(ft.Image(src=path, width=18, height=18))
+                badge_controls.append(
+                    ft.Image(src=path, width=18, height=18, visible=show_badges)
+                )
 
         # 닉네임
         prefix = "[후원] " if is_donation else ""
@@ -193,13 +223,12 @@ async def main(page: ft.Page):
             size=13,
             color=nick_color,
             weight=ft.FontWeight.BOLD,
-            selectable=True,
             no_wrap=True,
         )
 
         # 메시지 (이모지 치환)
-        message = chat_data['message']
-        emojis = chat_data.get('emojis', {})
+        message = chat_data["message"]
+        emojis = chat_data.get("emojis", {})
         msg_controls = []
 
         if emojis:
@@ -210,10 +239,14 @@ async def main(page: ft.Page):
                     # 텍스트 부분
                     if part:
                         sep = ": " if i == 0 and not msg_controls else ""
-                        msg_controls.append(ft.Text(
-                            f"{sep}{part}" if i == 0 else part,
-                            size=13, color=ft.Colors.WHITE, selectable=True,
-                        ))
+                        msg_controls.append(
+                            ft.Text(
+                                f"{sep}{part}" if i == 0 else part,
+                                size=13,
+                                color=ft.Colors.WHITE,
+                                selectable=True,
+                            )
+                        )
                 else:
                     # 이모지 이름
                     if part in emojis:
@@ -224,21 +257,39 @@ async def main(page: ft.Page):
                             msg_controls.append(ft.Image(src=path, width=20, height=20))
                             continue
                     # 매칭 실패 시 원본 텍스트
-                    msg_controls.append(ft.Text(
-                        f"{{:{part}:}}", size=13, color=ft.Colors.WHITE, selectable=True,
-                    ))
+                    msg_controls.append(
+                        ft.Text(
+                            f"{{:{part}:}}",
+                            size=13,
+                            color=ft.Colors.WHITE,
+                            selectable=True,
+                        )
+                    )
             # 첫 텍스트에 ": " 접두사
             if msg_controls and isinstance(msg_controls[0], ft.Text):
                 if not msg_controls[0].value.startswith(": "):
                     msg_controls[0].value = f": {msg_controls[0].value}"
         else:
-            msg_controls.append(ft.Text(
-                f": {message}", size=13, color=ft.Colors.WHITE,
-                selectable=True, expand=True,
-            ))
+            msg_controls.append(
+                ft.Text(
+                    f": {message}",
+                    size=13,
+                    color=ft.Colors.WHITE,
+                    selectable=True,
+                    expand=True,
+                )
+            )
+
+        # 닉네임 클릭 → UserChatDialog
+        _uid, _nick = uid, chat_data["nickname"]
+        nick_control = ft.GestureDetector(
+            content=nick_text,
+            on_tap=lambda e, u=_uid, n=_nick: show_user_dialog(u, n),
+            mouse_cursor=ft.MouseCursor.CLICK,
+        )
 
         # Row 조립: 시간 + 배지들 + 닉네임 + 메시지
-        controls = [time_text] + badge_controls + [nick_text] + msg_controls
+        controls = [time_text] + badge_controls + [nick_control] + msg_controls
 
         row = ft.Row(
             controls=controls,
@@ -249,7 +300,7 @@ async def main(page: ft.Page):
         if is_donation:
             container = ft.Container(
                 content=row,
-                bgcolor=ft.Colors.with_opacity(0.15, '#ffcc00'),
+                bgcolor=ft.Colors.with_opacity(0.15, "#ffcc00"),
                 border_radius=4,
                 padding=ft.Padding(left=4, right=4, top=2, bottom=2),
             )
@@ -257,31 +308,31 @@ async def main(page: ft.Page):
         else:
             widget = row
 
-        # ── 메모리 관리 ──
-        all_items.append((is_donation, widget, chat_data))
-        if len(all_items) > MAX_DISPLAY_MESSAGES:
-            _, removed_widget, _ = all_items.pop(0)
-            # 현재 필터에서 표시 중이었던 위젯만 controls에서 제거
-            if removed_widget in chat_list.controls:
-                chat_list.controls.remove(removed_widget)
+        # refs: visible 토글에 사용할 컨트롤 참조
+        refs = {"time": time_text, "badges": badge_controls}
 
-        visible = _item_matches_filter(is_donation, chat_data)
-        if visible:
-            chat_list.controls.append(widget)
+        # ── 메모리 관리 ──
+        all_items.append((is_donation, widget, chat_data, refs))
+        if len(all_items) > MAX_DISPLAY_MESSAGES:
+            _, removed_widget, _, _ = all_items.pop(0)
+            chat_list.controls.remove(removed_widget)
+
+        widget.visible = _item_matches_filter(is_donation, chat_data)
+        chat_list.controls.append(widget)
         chat_log.log(chat_data)
         page.update()
-        if at_bottom and visible:
+        if at_bottom and widget.visible:
             await chat_list.scroll_to(offset=-1, duration=0)
 
     def on_status_changed(msg):
-        if '연결 완료' in msg:
+        if "연결 완료" in msg:
             status_text.color = ft.Colors.GREEN_400
             connect_btn.content.value = "해제"
             connect_btn.bgcolor = ft.Colors.RED_700
             connect_btn.disabled = False
             if worker:
                 chat_log.setup(worker.channelName)
-        elif '연결 실패' in msg or '재연결 실패' in msg:
+        elif "연결 실패" in msg or "재연결 실패" in msg:
             status_text.color = ft.Colors.RED_400
             connect_btn.content.value = "연결"
             connect_btn.bgcolor = ft.Colors.GREEN
@@ -328,10 +379,108 @@ async def main(page: ft.Page):
         worker = ChatWorker(uid, cookies, on_chat_received, on_status_changed)
         page.run_task(worker.run)  # Flet 이벤트 루프에서 async 실행
 
+    def show_user_dialog(uid: str, nickname: str):
+        """닉네임 클릭 시 유저 채팅 기록 다이얼로그"""
+        msgs = user_messages.get(uid, [])
+
+        if msgs:
+            rows = []
+            for cd in msgs:
+                is_don = cd["type"] == "후원"
+                time_ctrl = ft.Text(
+                    f"[{cd['time']}]",
+                    size=11,
+                    color=ft.Colors.GREY_500,
+                    no_wrap=True,
+                )
+                prefix = "[후원] " if is_don else ""
+                msg_ctrl = ft.Text(
+                    f"{prefix}{cd['message']}",
+                    size=12,
+                    color=ft.Colors.AMBER_300 if is_don else ft.Colors.WHITE,
+                    selectable=True,
+                    expand=True,
+                )
+                row = ft.Row(
+                    controls=[time_ctrl, msg_ctrl],
+                    spacing=6,
+                    vertical_alignment=ft.CrossAxisAlignment.START,
+                )
+                if is_don:
+                    item = ft.Container(
+                        content=row,
+                        bgcolor=ft.Colors.with_opacity(0.15, "#ffcc00"),
+                        border_radius=4,
+                        padding=ft.Padding(left=4, right=4, top=2, bottom=2),
+                    )
+                else:
+                    item = row
+                rows.append(item)
+            list_content = ft.ListView(
+                controls=rows,
+                spacing=2,
+                auto_scroll=True,
+                padding=ft.Padding.symmetric(horizontal=4, vertical=2),
+            )
+        else:
+            list_content = ft.Text("채팅 기록 없음", color=ft.Colors.GREY_500, size=12)
+
+        count_label = ft.Text(
+            f"최근 {len(msgs)}건" if msgs else "",
+            size=11,
+            color=ft.Colors.GREY_600,
+        )
+
+        dialog = ft.AlertDialog(
+            title=ft.Row(
+                controls=[
+                    ft.Text(nickname, weight=ft.FontWeight.BOLD),
+                    count_label,
+                ],
+                spacing=8,
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+            ),
+            content=ft.Container(
+                content=list_content,
+                width=400,
+                height=300,
+                border=ft.Border.all(1, ft.Colors.GREY_800),
+                border_radius=4,
+                bgcolor=ft.Colors.with_opacity(0.3, ft.Colors.BLACK),
+            ),
+            actions=[
+                ft.TextButton(
+                    "닫기",
+                    on_click=lambda e: (setattr(dialog, "open", False), page.update()),
+                ),
+            ],
+            actions_alignment=ft.MainAxisAlignment.END,
+        )
+        page.show_dialog(dialog)
+
+    def toggle_timestamp(e):
+        nonlocal show_timestamp
+        show_timestamp = not show_timestamp
+        timestamp_menu_item.content.value = "타임스탬프 ✓" if show_timestamp else "타임스탬프"
+        for _, _, _, refs in all_items:
+            refs["time"].visible = show_timestamp
+        page.update()
+
+    def toggle_badges(e):
+        nonlocal show_badges
+        show_badges = not show_badges
+        badge_menu_item.content.value = "배지 ✓" if show_badges else "배지"
+        for _, _, _, refs in all_items:
+            for badge in refs["badges"]:
+                badge.visible = show_badges
+        page.update()
+
     def toggle_donation_only(e):
         nonlocal donation_only
         donation_only = not donation_only
-        donation_menu_item.content.value = "후원만 보기 ✓" if donation_only else "후원만 보기"
+        donation_menu_item.content.value = (
+            "후원만 보기 ✓" if donation_only else "후원만 보기"
+        )
         _rebuild_chat_list()
 
     def clear_chat(e):
@@ -453,6 +602,18 @@ async def main(page: ft.Page):
         on_click=toggle_donation_only,
     )
 
+    timestamp_menu_item = ft.MenuItemButton(
+        content=ft.Text("타임스탬프 ✓"),
+        leading=ft.Icon(ft.Icons.ACCESS_TIME, size=18),
+        on_click=toggle_timestamp,
+    )
+
+    badge_menu_item = ft.MenuItemButton(
+        content=ft.Text("배지 ✓"),
+        leading=ft.Icon(ft.Icons.MILITARY_TECH, size=18),
+        on_click=toggle_badges,
+    )
+
     menubar = ft.MenuBar(
         controls=[
             ft.SubmenuButton(
@@ -475,10 +636,8 @@ async def main(page: ft.Page):
             ft.SubmenuButton(
                 content=ft.Text("설정", size=13),
                 controls=[
-                    ft.MenuItemButton(
-                        content=ft.Text("설정 열기"),
-                        leading=ft.Icon(ft.Icons.SETTINGS, size=18),
-                    ),
+                    timestamp_menu_item,
+                    badge_menu_item,
                 ],
             ),
             ft.SubmenuButton(

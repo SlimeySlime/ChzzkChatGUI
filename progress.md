@@ -262,3 +262,67 @@ page.run_task(worker.run)
 - 검색과 후원 필터는 AND 조건 (둘 다 적용됨)
 - `clear_chat`도 `search_query`/`search_field.value` 초기화 포함
 - `_item_matches_filter`가 두 조건을 단일 함수로 관리하므로 이후 필터 추가가 쉬움
+
+---
+
+## Step 9-B: 닉네임 클릭 → UserChatDialog ✅
+
+### 구현 내용
+
+**`src/main.py` 수정**
+
+**닉네임 클릭 처리**
+- `nick_text`의 `selectable=True` 제거 — Flutter `SelectableText`가 포인터 이벤트를 가로채 `GestureDetector`가 탭을 수신 못 하는 문제 해결
+- `ft.GestureDetector`로 `nick_text` 감싸기: `on_tap` → `show_user_dialog(uid, nickname)`, `mouse_cursor=ft.MouseCursor.CLICK`
+
+**`show_user_dialog(uid, nickname)` 함수 추가**
+- `user_messages[uid]` (최대 500건)를 기반으로 `ft.AlertDialog` 구성
+- 각 메시지를 `[시간]` + 메시지 텍스트 `ft.Row`로 렌더링 (메인 채팅 리스트와 동일한 레이아웃)
+- 후원 메시지: amber 텍스트 + 금색 반투명 배경 (`bgcolor=with_opacity(0.15, '#ffcc00')`)
+- 다이얼로그 타이틀: 닉네임 + "최근 N건" 카운트
+- 컨텐츠 영역: dark 배경 + GREY_800 테두리 (메인 채팅 컨테이너와 동일 스타일)
+- 닫기 버튼: `dialog.open = False` + `page.update()`
+
+### 비고
+- `page.show_dialog()` 사용 (Flet 0.80 기준)
+- `selectable=True`가 있는 `ft.Text`를 `GestureDetector`로 감싸면 탭 이벤트가 전달되지 않으므로 반드시 제거 필요
+
+---
+
+## Step 10-A: visible 방식 통합 + 타임스탬프/배지 토글 ✅
+
+### 배경
+
+위젯 재생성 없이 `.visible` 프로퍼티만 변경하는 방식으로 전체 필터/토글 메커니즘을 통일.
+- **재생성 방식**: Flutter가 위젯 생성/삭제를 반복 → 오버헤드 발생
+- **visible 방식**: 기존 위젯 객체 유지, 프로퍼티만 변경 → `page.update()` 한 번으로 배치 처리
+
+### 구현 내용
+
+**`all_items` 구조 변경**
+- 3-tuple `(is_donation, widget, chat_data)` → 4-tuple `(is_donation, widget, chat_data, refs)`
+- `refs = {"time": ft.Text, "badges": list[ft.Image]}` — visible 토글 대상 컨트롤 참조 보관
+
+**`_rebuild_chat_list` 교체**
+- 기존: `chat_list.controls[:] = [필터 통과한 위젯만]` (controls 재구성)
+- 변경: `widget.visible = _item_matches_filter(...)` 순회 → 후원 필터/검색도 visible 방식으로 통일
+- 모든 위젯이 항상 `chat_list.controls`에 존재
+
+**`on_chat_received` 수정**
+- `time_text` 생성 시 `visible=show_timestamp` 초기값 적용
+- 각 배지 `ft.Image` 생성 시 `visible=show_badges` 초기값 적용
+- `refs` dict 생성 후 `all_items`에 4-tuple로 저장
+- 항상 `chat_list.controls.append(widget)` → `if visible:` 조건 제거
+- 메모리 관리 단순화: `if removed_widget in controls` 체크 제거 (항상 존재)
+
+**토글 함수 추가**
+- `toggle_timestamp(e)`: `show_timestamp` 플래그 토글 → `refs["time"].visible` 일괄 변경
+- `toggle_badges(e)`: `show_badges` 플래그 토글 → `refs["badges"]` 내 이미지 일괄 변경
+- 메뉴 텍스트 "타임스탬프 ✓" / "배지 ✓" 로 상태 표시
+
+**메뉴 연결**
+- 설정 메뉴: `timestamp_menu_item`, `badge_menu_item` 추가
+
+### 비고
+- 후원 필터(`donation_only`)와 검색(`search_query`)도 동일한 visible 방식으로 통일 → 단일 메커니즘 유지보수
+- `page.update()` 한 번으로 변경된 프로퍼티를 Flutter에 배치 전송 (diff 방식)
