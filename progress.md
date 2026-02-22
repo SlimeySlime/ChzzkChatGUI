@@ -326,3 +326,67 @@ page.run_task(worker.run)
 ### 비고
 - 후원 필터(`donation_only`)와 검색(`search_query`)도 동일한 visible 방식으로 통일 → 단일 메커니즘 유지보수
 - `page.update()` 한 번으로 변경된 프로퍼티를 Flutter에 배치 전송 (diff 방식)
+
+---
+
+## Step 10-B: 폰트 크기 조절 ✅
+
+### 구현 내용
+
+**`src/main.py` 수정**
+
+**settings.json 저장/로드**
+- 앱 시작 시 `SETTINGS_PATH`(settings.json) 로드 → `font_size` 초기값 설정 (기본 13)
+- `_save_settings()` 함수: 기존 settings.json을 읽어 `font_size` 키만 갱신 후 저장 (다른 키 보존)
+
+**`all_items` refs 구조 확장**
+- 기존: `refs = {"time": ft.Text, "badges": list[ft.Image]}`
+- 변경: `refs = {"time": ft.Text, "badges": list[ft.Image], "texts": list[ft.Text]}`
+  - `texts`: `[time_text, nick_text] + msg_text_refs` (msg_controls 중 `ft.Text` 타입만 필터)
+  - 폰트 크기 변경 시 이 리스트를 순회해 `text.size` 일괄 변경
+
+**텍스트 생성 시 `size=font_size` 적용**
+- `time_text`, `nick_text`, 메시지 텍스트 모두 하드코딩 `13` → `font_size` 변수 참조
+
+**`apply_font_size(size)` 함수 추가**
+- `nonlocal font_size` → 상태 갱신
+- `all_items` 전체 순회 → `refs["texts"]` 내 모든 `ft.Text.size` 변경
+- `page.update()` → `_save_settings()` 호출
+
+**`show_font_size_dialog(e)` 함수 추가**
+- `ft.Slider(min=10, max=20, divisions=10)` — 정수 단계
+- 슬라이더 이동 시 `size_label` + `preview` 텍스트 실시간 갱신
+- "확인" → `apply_font_size(int(slider.value))` 호출, 다이얼로그 닫기
+- "취소" → 다이얼로그만 닫기 (적용 없음)
+
+**메뉴 연결**
+- 설정 메뉴 최상단에 "폰트 크기..." 항목 추가 + 구분선(`ft.Divider`)
+
+---
+
+## Step 10-C: 버그 리포트 다이얼로그 ✅
+
+### 구현 내용
+
+**`src/main.py` 수정**
+
+**imports 추가**
+- `import platform`, `import sys`, `import webbrowser`
+- `from urllib.parse import quote`
+- config에서 `BUG_REPORT_EMAIL` import
+
+**`show_bug_report_dialog(e)` 함수 추가**
+- 제목 입력 `ft.TextField` (빈 제목 시 `error_text` 표시)
+- 설명 입력 `ft.TextField(multiline=True, min_lines=4)`
+- 시스템 정보 자동 표시: `platform.system()`, `platform.release()`, `sys.version`
+- `BUG_REPORT_EMAIL` 미설정 시: "메일 전송 버튼" 비활성화 + `.env` 안내 텍스트 표시
+- "메일 클라이언트로 보내기" 버튼:
+  - `mailto:{email}?subject={quote(subject)}&body={quote(body)}` URL 생성
+  - `page.launch_url(mailto_url)` → 실패 시 `webbrowser.open()` 폴백
+
+**메뉴 연결**
+- 도움말 메뉴의 "버그 리포트" 항목에 `on_click=show_bug_report_dialog` 연결
+
+### 비고
+- PyQt6 레거시 `BugReportDialog`와 동일한 `mailto:` 방식 사용
+- `page.launch_url()` Flet API 우선 시도, 예외 시 표준 `webbrowser` 폴백

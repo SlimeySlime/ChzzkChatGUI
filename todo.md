@@ -63,10 +63,10 @@ threading.Thread에서 page.update() 호출 시 UI 미갱신 버그 해결.
 - [x] 닉네임 클릭 → UserChatDialog
 
 ## Step 10: 설정 다이얼로그
-- [ ] 폰트 크기 조절 (settings.json 저장/로드)
+- [x] 폰트 크기 조절 (settings.json 저장/로드, 기존 메시지 즉각 반영)
 - [x] 타임스탬프 표시/숨기기 토글
 - [x] 배지 표시/숨기기 토글
-- [ ] 버그 리포트 다이얼로그
+- [x] 버그 리포트 다이얼로그 (mailto: 방식, BUG_REPORT_EMAIL 미설정 시 안내)
 
 ## Step 11: 창 크기/위치 저장
 - [ ] 종료 시 창 크기/위치 settings.json 저장

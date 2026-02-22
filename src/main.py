@@ -14,14 +14,18 @@ import asyncio
 import hashlib
 import json
 import os
+import platform
 import re
+import sys
+import webbrowser
+from urllib.parse import quote
 
 import requests
 import flet as ft
 
 from chat_logger import ChatLogger
 from chat_worker import ChatWorker
-from config import COOKIES_PATH, BADGE_CACHE_DIR, EMOJI_CACHE_DIR
+from config import COOKIES_PATH, BADGE_CACHE_DIR, EMOJI_CACHE_DIR, SETTINGS_PATH, BUG_REPORT_EMAIL
 
 MAX_DISPLAY_MESSAGES = 10_000
 MAX_USER_MESSAGES = 500
@@ -144,6 +148,29 @@ async def main(page: ft.Page):
             )
         )
 
+    # ── 설정 로드 ──
+    _settings: dict = {}
+    if os.path.exists(SETTINGS_PATH):
+        try:
+            with open(SETTINGS_PATH, encoding="utf-8") as f:
+                _settings = json.load(f)
+        except Exception:
+            pass
+
+    font_size: int = int(_settings.get("font_size", 13))
+
+    def _save_settings():
+        s: dict = {}
+        if os.path.exists(SETTINGS_PATH):
+            try:
+                with open(SETTINGS_PATH, encoding="utf-8") as f:
+                    s = json.load(f)
+            except Exception:
+                pass
+        s["font_size"] = font_size
+        with open(SETTINGS_PATH, "w", encoding="utf-8") as f:
+            json.dump(s, f, indent=2, ensure_ascii=False)
+
     # ── ChatWorker 상태 ──
     worker = None
     chat_log = ChatLogger()
@@ -198,7 +225,7 @@ async def main(page: ft.Page):
         # 시간
         time_text = ft.Text(
             f"[{chat_data['time']}] ",
-            size=13,
+            size=font_size,
             color=ft.Colors.GREY_500,
             selectable=True,
             no_wrap=True,
@@ -220,7 +247,7 @@ async def main(page: ft.Page):
         prefix = "[후원] " if is_donation else ""
         nick_text = ft.Text(
             f"{prefix}{chat_data['nickname']}",
-            size=13,
+            size=font_size,
             color=nick_color,
             weight=ft.FontWeight.BOLD,
             no_wrap=True,
@@ -235,14 +262,14 @@ async def main(page: ft.Page):
             parts = EMOJI_PATTERN.split(message)
             # parts: [text, emoji_name, text, emoji_name, ...]
             for i, part in enumerate(parts):
-                if i % 2 == 0:
+                if i % 2 == 0:  # 2부분인데, % 가 아니라 i == 2로 해도 되지않아?
                     # 텍스트 부분
                     if part:
                         sep = ": " if i == 0 and not msg_controls else ""
                         msg_controls.append(
                             ft.Text(
                                 f"{sep}{part}" if i == 0 else part,
-                                size=13,
+                                size=font_size,
                                 color=ft.Colors.WHITE,
                                 selectable=True,
                             )
@@ -260,7 +287,7 @@ async def main(page: ft.Page):
                     msg_controls.append(
                         ft.Text(
                             f"{{:{part}:}}",
-                            size=13,
+                            size=font_size,
                             color=ft.Colors.WHITE,
                             selectable=True,
                         )
@@ -273,7 +300,7 @@ async def main(page: ft.Page):
             msg_controls.append(
                 ft.Text(
                     f": {message}",
-                    size=13,
+                    size=font_size,
                     color=ft.Colors.WHITE,
                     selectable=True,
                     expand=True,
@@ -308,8 +335,13 @@ async def main(page: ft.Page):
         else:
             widget = row
 
-        # refs: visible 토글에 사용할 컨트롤 참조
-        refs = {"time": time_text, "badges": badge_controls}
+        # refs: visible/size 변경에 사용할 컨트롤 참조
+        msg_text_refs = [c for c in msg_controls if isinstance(c, ft.Text)]
+        refs = {
+            "time": time_text,
+            "badges": badge_controls,
+            "texts": [time_text, nick_text] + msg_text_refs,
+        }
 
         # ── 메모리 관리 ──
         all_items.append((is_donation, widget, chat_data, refs))
@@ -475,6 +507,153 @@ async def main(page: ft.Page):
                 badge.visible = show_badges
         page.update()
 
+    def apply_font_size(size: int):
+        nonlocal font_size
+        font_size = size
+        for _, _, _, refs in all_items:
+            for text in refs["texts"]:
+                text.size = font_size
+        page.update()
+        _save_settings()
+
+    def show_font_size_dialog(e):
+        preview = ft.Text(
+            "채팅 미리보기: 안녕하세요! 🎉",
+            size=font_size,
+            color=ft.Colors.WHITE,
+        )
+        size_label = ft.Text(str(font_size), size=13, color=ft.Colors.GREY_400)
+        slider = ft.Slider(
+            min=10,
+            max=20,
+            value=font_size,
+            divisions=10,
+            label="{value}",
+            active_color=ft.Colors.GREEN_400,
+        )
+
+        def on_slider_change(ev):
+            new_size = int(slider.value)
+            size_label.value = str(new_size)
+            preview.size = new_size
+            page.update()
+
+        slider.on_change = on_slider_change
+
+        def on_confirm(ev):
+            apply_font_size(int(slider.value))
+            font_dialog.open = False
+            page.update()
+
+        def on_cancel(ev):
+            font_dialog.open = False
+            page.update()
+
+        font_dialog = ft.AlertDialog(
+            title=ft.Text("폰트 크기"),
+            content=ft.Container(
+                content=ft.Column(
+                    controls=[
+                        ft.Row(
+                            controls=[ft.Text("크기:", size=13), size_label],
+                            spacing=4,
+                        ),
+                        slider,
+                        ft.Divider(height=1, color=ft.Colors.GREY_800),
+                        preview,
+                    ],
+                    spacing=10,
+                ),
+                width=320,
+            ),
+            actions=[
+                ft.TextButton("취소", on_click=on_cancel),
+                ft.TextButton("확인", on_click=on_confirm),
+            ],
+            actions_alignment=ft.MainAxisAlignment.END,
+        )
+        page.show_dialog(font_dialog)
+
+    def show_bug_report_dialog(e):
+        sys_info = (
+            f"OS: {platform.system()} {platform.release()}, "
+            f"Python: {sys.version.split()[0]}"
+        )
+        title_field = ft.TextField(
+            label="제목",
+            hint_text="버그 제목을 입력하세요",
+            height=48,
+            border_color=ft.Colors.GREY_700,
+            focused_border_color=ft.Colors.GREEN,
+        )
+        desc_field = ft.TextField(
+            label="설명",
+            hint_text="어떤 상황에서 버그가 발생했나요?\n재현 방법이 있다면 알려주세요.",
+            multiline=True,
+            min_lines=4,
+            max_lines=6,
+            border_color=ft.Colors.GREY_700,
+            focused_border_color=ft.Colors.GREEN,
+        )
+
+        def on_send(ev):
+            title = (title_field.value or "").strip()
+            if not title:
+                title_field.error_text = "제목을 입력해주세요"
+                page.update()
+                return
+            title_field.error_text = None
+            desc = (desc_field.value or "").strip()
+            subject = f"[ChzzkChat Bug] {title}"
+            body = f"{desc}\n\n---\n{sys_info}"
+            mailto_url = (
+                f"mailto:{BUG_REPORT_EMAIL}"
+                f"?subject={quote(subject)}&body={quote(body)}"
+            )
+            try:
+                page.launch_url(mailto_url)
+            except Exception:
+                webbrowser.open(mailto_url)
+            bug_dialog.open = False
+            page.update()
+
+        def on_close(ev):
+            bug_dialog.open = False
+            page.update()
+
+        content_controls: list[ft.Control] = [
+            title_field,
+            desc_field,
+            ft.Text(sys_info, size=11, color=ft.Colors.GREY_600),
+        ]
+        if not BUG_REPORT_EMAIL:
+            content_controls.append(
+                ft.Text(
+                    ".env에 BUG_REPORT_EMAIL을 설정하면 메일 전송이 가능합니다",
+                    size=11,
+                    color=ft.Colors.AMBER_700,
+                )
+            )
+
+        bug_dialog = ft.AlertDialog(
+            title=ft.Text("버그 리포트"),
+            content=ft.Container(
+                content=ft.Column(controls=content_controls, spacing=10),
+                width=400,
+            ),
+            actions=[
+                ft.TextButton("닫기", on_click=on_close),
+                ft.TextButton(
+                    "메일 클라이언트로 보내기",
+                    icon=ft.Icons.SEND,
+                    on_click=on_send,
+                    disabled=not BUG_REPORT_EMAIL,
+                ),
+            ],
+            actions_alignment=ft.MainAxisAlignment.END,
+        )
+        page.show_dialog(bug_dialog)
+
     def toggle_donation_only(e):
         nonlocal donation_only
         donation_only = not donation_only
@@ -636,6 +815,12 @@ async def main(page: ft.Page):
             ft.SubmenuButton(
                 content=ft.Text("설정", size=13),
                 controls=[
+                    ft.MenuItemButton(
+                        content=ft.Text("폰트 크기..."),
+                        leading=ft.Icon(ft.Icons.TEXT_FIELDS, size=18),
+                        on_click=show_font_size_dialog,
+                    ),
+                    ft.Divider(height=1),
                     timestamp_menu_item,
                     badge_menu_item,
                 ],
@@ -646,6 +831,7 @@ async def main(page: ft.Page):
                     ft.MenuItemButton(
                         content=ft.Text("버그 리포트"),
                         leading=ft.Icon(ft.Icons.BUG_REPORT, size=18),
+                        on_click=show_bug_report_dialog,
                     ),
                 ],
             ),
