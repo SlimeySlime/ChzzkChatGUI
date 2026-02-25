@@ -1,0 +1,48 @@
+@import "tailwindcss";
+
+/* 앱 전체: 기본 폰트 사이즈 변수 */
+:root {
+  --chat-font-size: 13px;
+}
+
+body {
+  overflow: hidden;
+  user-select: none;
+}
+
+/* 스크롤바 스타일 */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #4b5563;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #6b7280;
+}
+
+/* 채팅 폰트 크기 (JS에서 CSS 변수로 제어) */
+.chat-text {
+  font-size: var(--chat-font-size);
+}
+
+/* 메뉴 드롭다운 */
+.menu-dropdown {
+  position: relative;
+}
+.menu-dropdown:focus-within .menu-panel,
+.menu-dropdown:hover .menu-panel {
+  display: block;
+}
+.menu-panel {
+  display: none;
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 50;
+  min-width: 160px;
+}
