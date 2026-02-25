@@ -1,6 +1,8 @@
 use chrono::TimeZone;
 use futures_util::{SinkExt, StreamExt};
 use serde_json::json;
+use std::io::Write;
+use std::path::PathBuf;
 use tauri::Emitter;
 use tokio_tungstenite::{connect_async, tungstenite::Message};
 
@@ -19,6 +21,7 @@ pub async fn run(
     mut chat_channel_id: String,
     mut access_token: String,
     user_id_hash: String,
+    log_dir: PathBuf,   // {app_dir}/log/{channel_name}/
 ) {
     loop {
         let result = chat_session(
@@ -29,6 +32,7 @@ pub async fn run(
             &chat_channel_id,
             &access_token,
             &user_id_hash,
+            &log_dir,
         )
         .await;
 
@@ -63,6 +67,7 @@ async fn chat_session(
     chat_channel_id: &str,
     access_token: &str,
     user_id_hash: &str,
+    log_dir: &PathBuf,
 ) -> Result<(), String> {
     let (ws_stream, _) = connect_async(WS_URL)
         .await
@@ -149,6 +154,7 @@ async fn chat_session(
                     for item in bdy {
                         if let Some(chat) = parse_chat(item, chat_type) {
                             let _ = app_handle.emit("chat-message", &chat);
+                            write_log(log_dir, &chat);
                         }
                     }
                 }
@@ -245,4 +251,24 @@ fn format_time(ms: u64) -> String {
         .unwrap_or_else(chrono::Local::now)
         .format("%H:%M:%S")
         .to_string()
+}
+
+fn write_log(log_dir: &PathBuf, chat: &ChatData) {
+    let date = chrono::Local::now().format("%Y-%m-%d").to_string();
+    let log_path = log_dir.join(format!("{date}.log"));
+    // let Ok(()) = 문법이 잘 이해안가
+    if let Ok(()) = std::fs::create_dir_all(log_dir) {
+        let line = if chat.chat_type == "후원" {
+            format!("[{}] [후원] {}: {}\n", chat.time, chat.nickname, chat.message)
+        } else {
+            format!("[{}] {}: {}\n", chat.time, chat.nickname, chat.message)
+        };
+        if let Ok(mut file) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&log_path)
+        {   // 왜 여기 괄호는 이렇게 닫은거지?
+            let _ = file.write_all(line.as_bytes());
+        }
+    }
 }

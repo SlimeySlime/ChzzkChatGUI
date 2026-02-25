@@ -1,8 +1,10 @@
 mod api;
 mod chat;
+mod settings;
 mod types;  // use 와 mod의 차이는 뭐지? 둘다 python import의 개념같은데말야
 
 use std::fs;
+use std::path::PathBuf;
 use std::sync::Mutex;
 use types::Cookies;
 
@@ -10,6 +12,27 @@ use types::Cookies;
 /// connect_chat으로 task를 시작하고, disconnect_chat으로 중단.
 struct ChatState(Mutex<Option<tokio::task::AbortHandle>>);
 // Mutex<Option<AbortHandle>> 문법이 좀 낯선데, 설명이 필요해.
+
+/// settings.json, log/ 등 앱 파일을 읽고 쓸 디렉토리 반환.
+/// dev: 프로젝트 루트 (exe 4단계 위, cookies.json이 있는 곳)
+/// 배포: 실행 파일 옆 디렉토리
+fn app_dir() -> Result<PathBuf, String> {
+    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+
+    // dev 환경: cookies.json이 있는 프로젝트 루트를 우선
+    // 주석: ancestors().nth() 와 같은 방식말고 좀더 안전하고, 좋은 방법이 없을까?
+    // 아니면 이게 Rust 권장방식인가?
+    if let Some(dir) = exe.ancestors().nth(4) {
+        if dir.join("cookies.json").exists() {
+            return Ok(dir.to_path_buf());
+        }
+    }
+    // 배포: 실행 파일 옆
+    exe.parent()
+        .map(|p| p.to_path_buf())
+        .ok_or("실행 파일 경로를 찾을 수 없습니다".to_string())
+    // 주석: .map(|p| p.to_path_buf()) 와 같은 문법도 설명해줘
+}
 
 fn load_cookies() -> Result<Cookies, String> {
     let exe = std::env::current_exe().map_err(|e| e.to_string())?;
@@ -39,6 +62,20 @@ fn load_cookies() -> Result<Cookies, String> {
     ))
 }
 
+/// 저장된 설정을 반환. 없으면 기본값.
+#[tauri::command]
+fn get_settings() -> settings::Settings {
+    app_dir()
+        .map(|dir| settings::load(&dir))
+        .unwrap_or_default()
+}
+
+/// 설정을 settings.json에 저장.
+#[tauri::command]
+fn save_settings(s: settings::Settings) -> Result<(), String> {
+    settings::save(&app_dir()?, &s)
+}
+
 /// 연결에 필요한 정보를 조회하고 채팅 워커(WebSocket) 시작.
 /// 첨부: #[tauri::command] 는 어떤 기능이지? python의 @decorator 같은 기능인가?
 /// 첨부: 어느 fn이나 [tauri::command]를 붙이면 뭐든 invoke 할수있게 되는건가?
@@ -63,6 +100,12 @@ async fn connect_chat(
     )?;
     let (access_token, _extra_token) = token_result;
 
+    // 로그 디렉토리: {app_dir}/log/{channel_name}/
+    let log_dir = app_dir()
+        .unwrap_or_else(|_| PathBuf::from("."))
+        .join("log")
+        .join(&channel_name);
+
     // 기존 채팅 워커가 있으면 먼저 중단
     if let Some(handle) = state.0.lock().unwrap().take() {
         handle.abort();
@@ -77,6 +120,7 @@ async fn connect_chat(
         chat_channel_id.clone(),
         access_token,
         user_id_hash,
+        log_dir,
     ));
     *state.0.lock().unwrap() = Some(task.abort_handle());
 
@@ -99,7 +143,12 @@ pub fn run() {
     tauri::Builder::default()
         .manage(ChatState(Mutex::new(None)))
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![connect_chat, disconnect_chat])
+        .invoke_handler(tauri::generate_handler![
+            connect_chat,
+            disconnect_chat,
+            get_settings,
+            save_settings,
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

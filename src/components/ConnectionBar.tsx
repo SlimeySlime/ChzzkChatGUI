@@ -16,7 +16,7 @@ export default function ConnectionBar({
   const btnColor = isConnected
     ? "bg-red-600 hover:bg-red-500"
     : "bg-green-700 hover:bg-green-600";
-  const btnLabel = isConnecting ? "연결 중..." : isConnected ? "해제" : "연결";
+  const btnLabel = isConnecting ? "연결 중..." : isConnected ? "해제" : "연결"; 
 
   return (
     <div className="flex gap-2 px-2 py-1.5 bg-neutral-900 border-b border-neutral-700">
