@@ -3,7 +3,7 @@
 Chzzk 채팅 뷰어를 Tauri(React + TypeScript + Rust)로 처음부터 구현.
 Rust와 Tauri를 학습하면서 단계적으로 진행하는 프로젝트.
 
-**현재 단계: Phase 5 (완전한 ChatUI 구현)**
+**현재 단계: Phase 7 완료 (나중에 항목 대기 중)**
 
 ## 기술 스택
 

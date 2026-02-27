@@ -1,3 +1,5 @@
+import { getCurrentWindow } from "@tauri-apps/api/window";
+
 interface MenuBarProps {
   donationOnly: boolean;
   showTimestamp: boolean;
@@ -23,6 +25,10 @@ export default function MenuBar({
 }: MenuBarProps) {
   return (
     <div className="flex bg-neutral-800 border-b border-neutral-700 text-sm select-none">
+      {/* 앱 아이콘 */}
+      <div className="flex items-center px-2">
+        <img src="/img/chzzk.png" className="w-4 h-4" alt="Chzzk" />
+      </div>
       {/* TODO: 메뉴바 버튼 직접 클릭시에, 메뉴가 펼쳐진상태로 다시 버튼클릭시엔 안닫힘. 버그같음*/}
       {/* 옵션 */}
       <div className="menu-dropdown">
@@ -81,8 +87,17 @@ export default function MenuBar({
         </div>
       </div>
 
-      {/* 도움말 */}
-      <div className="menu-dropdown">
+      {/* 트레이 아이콘으로 버튼 */}
+      <button
+        onClick={() => getCurrentWindow().hide()}
+        className="px-3 py-1.5 hover:bg-neutral-700 text-neutral-200"
+        title="트레이 아이콘으로 최소화"
+      >
+        트레이 아이콘
+      </button>
+
+      {/* 도움말 - 삭제 예정, 임시 hidden */}
+      <div className="menu-dropdown hidden">
         <button className="px-3 py-1.5 hover:bg-neutral-700 text-neutral-200">
           도움말
         </button>

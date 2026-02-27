@@ -1,11 +1,12 @@
 mod api;
 mod chat;
 mod settings;
-mod types;  // use 와 mod의 차이는 뭐지? 둘다 python import의 개념같은데말야
+mod types;
 
 use std::fs;
 use std::path::PathBuf;
 use std::sync::Mutex;
+use tauri::Manager;  // get_webview_window 등 창 관리 메서드에 필요
 use types::Cookies;
 
 /// 채팅 워커 task의 AbortHandle 보관.
@@ -106,6 +107,12 @@ async fn connect_chat(
         .join("log")
         .join(&channel_name);
 
+    // 이미지 캐시 디렉토리: {app_dir}/cache/{channel_name}/
+    let cache_dir = app_dir()
+        .unwrap_or_else(|_| PathBuf::from("."))
+        .join("cache")
+        .join(&channel_name);
+
     // 기존 채팅 워커가 있으면 먼저 중단
     if let Some(handle) = state.0.lock().unwrap().take() {
         handle.abort();
@@ -121,6 +128,7 @@ async fn connect_chat(
         access_token,
         user_id_hash,
         log_dir,
+        cache_dir,
     ));
     *state.0.lock().unwrap() = Some(task.abort_handle());
 
@@ -143,12 +151,45 @@ pub fn run() {
     tauri::Builder::default()
         .manage(ChatState(Mutex::new(None)))
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_window_state::Builder::default().build())
         .invoke_handler(tauri::generate_handler![
             connect_chat,
             disconnect_chat,
             get_settings,
             save_settings,
         ])
+        .setup(|app| {
+            // 시스템 트레이 설정
+            // app.default_window_icon(): tauri.conf.json의 bundle.icon에서 자동 로드됨
+            let icon = app.default_window_icon()
+                .expect("아이콘 로드 실패")
+                .clone();
+            let _tray = tauri::tray::TrayIconBuilder::new()
+                .icon(icon)
+                .tooltip("ChzzkChat")
+                // 트레이 아이콘 클릭 → 창 표시/숨기기 토글
+                .on_tray_icon_event(|tray, event| {
+                    if let tauri::tray::TrayIconEvent::Click {
+                        button: tauri::tray::MouseButton::Left,
+                        button_state: tauri::tray::MouseButtonState::Up,
+                        ..
+                    } = event
+                    {
+                        let app = tray.app_handle();
+                        if let Some(win) = app.get_webview_window("main") {
+                            if matches!(win.is_visible(), Ok(true)) {
+                                // matches! 매크로없을때 에러는 왜 발생한거고, 왜 수정한거야?
+                                let _ = win.hide();
+                            } else {
+                                let _ = win.show();
+                                let _ = win.set_focus();
+                            }
+                        }
+                    }
+                })
+                .build(app)?;
+            Ok(())
+        })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

@@ -5,7 +5,8 @@ export interface ChatData {
   time: string;
   chat_type: "채팅" | "후원";
   color_code: string;        // "SG001"~"SG009" | ""
-  badges: string[];          // 이미지 URL 목록 (최대 3개)
+  badges: string[];          // 이미지 로컬경로 or URL (최대 3개)
+  emojis: Record<string, string>;  // {이모지이름: 로컬경로 or URL}
   subscription_month: number;
   os_type: "PC" | "MOBILE";
   user_role: "common_user" | "manager" | "streamer";

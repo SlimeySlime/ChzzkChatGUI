@@ -22,6 +22,14 @@ export default function App() {
   const [showBadges, setShowBadges] = useState(true);
   const [fontSize, setFontSize] = useState(13);
 
+  // 검색 상태
+  const [searchQuery, setSearchQuery] = useState("");
+  const [showSearch, setShowSearch] = useState(false);
+
+  // 유저 필터 상태
+  const [selectedUid, setSelectedUid] = useState<string | null>(null);
+  const [selectedNickname, setSelectedNickname] = useState("");
+
   // 최신 설정값을 항상 참조하기 위한 ref (saveSettings에서 stale closure 방지)
   const settingsRef = useRef({ font_size: 13, show_timestamp: true, show_badges: true, donation_only: false });
 
@@ -57,6 +65,22 @@ export default function App() {
     return () => { unlisten.then((fn) => fn()); };
   }, []);
 
+  // Ctrl+F: 검색 바 토글 / Escape: 검색 닫기
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.ctrlKey && e.key === "f") {
+        e.preventDefault();
+        setShowSearch((prev) => !prev);
+      }
+      if (e.key === "Escape") {
+        setShowSearch(false);
+        setSearchQuery("");
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
+
   // 설정 변경 + 즉시 저장. ref를 통해 항상 최신값을 유지
   const applySettings = (patch: Partial<typeof settingsRef.current>) => {
     const next = { ...settingsRef.current, ...patch };
@@ -88,6 +112,12 @@ export default function App() {
     }
   };
 
+  // 닉네임 클릭 → 유저 필터 (같은 유저 재클릭 시 해제)
+  const handleNicknameClick = (uid: string, nickname: string) => {
+    setSelectedUid((prev) => (prev === uid ? null : uid));
+    setSelectedNickname(nickname);
+  };
+
   // 더미 메시지 추가 (자동 스크롤 테스트용)
   const addDummyMessage = () => {
     dummyCounter++;
@@ -102,6 +132,7 @@ export default function App() {
         chat_type: isDonation ? "후원" : "채팅",
         color_code: ["", "SG001", "SG002", "SG004"][dummyCounter % 4],
         badges: [],
+        emojis: {},
         subscription_month: 0,
         os_type: "PC",
         user_role: "common_user",
@@ -150,11 +181,48 @@ export default function App() {
           {errorMsg}
         </div>
       )}
+
+      {/* 검색 바 - Ctrl+F로 열기/닫기 */}
+      {showSearch && (
+        <div className="px-2 py-1 bg-neutral-800 border-b border-neutral-700 flex gap-2">
+          <input
+            autoFocus
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") { setShowSearch(false); setSearchQuery(""); }
+            }}
+            placeholder="닉네임 / 메시지 검색..."
+            className="flex-1 bg-neutral-700 text-white text-xs px-2 py-1 rounded outline-none"
+          />
+          <button
+            onClick={() => { setShowSearch(false); setSearchQuery(""); }}
+            className="text-neutral-400 hover:text-white text-xs"
+          >✕</button>
+        </div>
+      )}
+
+      {/* 유저 필터 바 - 닉네임 클릭 시 표시 */}
+      {selectedUid && (
+        <div className="px-2 py-1 bg-neutral-700 border-b border-neutral-600 flex items-center text-xs">
+          <span className="text-neutral-300">
+            👤 <span className="text-white">{selectedNickname}</span> 채팅만 보기
+          </span>
+          <button
+            onClick={() => setSelectedUid(null)}
+            className="ml-auto text-neutral-400 hover:text-white"
+          >✕</button>
+        </div>
+      )}
+
       <ChatList
         chats={chats}
         showTimestamp={showTimestamp}
         showBadges={showBadges}
         donationOnly={donationOnly}
+        searchQuery={searchQuery}
+        selectedUid={selectedUid}
+        onNicknameClick={handleNicknameClick}
       />
 
       {/* 개발용: 더미 메시지 추가 버튼 */}

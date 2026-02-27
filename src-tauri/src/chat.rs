@@ -1,8 +1,9 @@
 use chrono::TimeZone;
 use futures_util::{SinkExt, StreamExt};
 use serde_json::json;
+use std::collections::HashMap;
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use tauri::Emitter;
 use tokio_tungstenite::{connect_async, tungstenite::Message};
 
@@ -21,7 +22,8 @@ pub async fn run(
     mut chat_channel_id: String,
     mut access_token: String,
     user_id_hash: String,
-    log_dir: PathBuf,   // {app_dir}/log/{channel_name}/
+    log_dir: PathBuf,
+    cache_dir: PathBuf,
 ) {
     loop {
         let result = chat_session(
@@ -33,6 +35,7 @@ pub async fn run(
             &access_token,
             &user_id_hash,
             &log_dir,
+            &cache_dir,
         )
         .await;
 
@@ -68,11 +71,15 @@ async fn chat_session(
     access_token: &str,
     user_id_hash: &str,
     log_dir: &PathBuf,
+    cache_dir: &PathBuf,
 ) -> Result<(), String> {
     let (ws_stream, _) = connect_async(WS_URL)
         .await
         .map_err(|e| e.to_string())?;
     let (mut write, mut read) = ws_stream.split();
+
+    // HTTP 클라이언트: 이미지 캐시 다운로드에 재사용
+    let http_client = reqwest::Client::new();
 
     // CONNECT 메시지 전송
     let connect_msg = json!({
@@ -113,7 +120,7 @@ async fn chat_session(
         .send(Message::text(recent_msg.to_string()))
         .await
         .map_err(|e| e.to_string())?;
-    read.next().await; // 최근 채팅 응답은 스킵 (Phase 5에서 활용 예정)
+    read.next().await; // 최근 채팅 응답은 스킵
 
     // 메인 수신 루프
     while let Some(msg_result) = read.next().await {
@@ -152,7 +159,8 @@ async fn chat_session(
 
                 if let Some(bdy) = raw["bdy"].as_array() {
                     for item in bdy {
-                        if let Some(chat) = parse_chat(item, chat_type) {
+                        if let Some(mut chat) = parse_chat(item, chat_type) {
+                            cache_images(&mut chat, cache_dir, &http_client).await;
                             let _ = app_handle.emit("chat-message", &chat);
                             write_log(log_dir, &chat);
                         }
@@ -173,10 +181,25 @@ fn parse_chat(data: &serde_json::Value, chat_type: &str) -> Option<ChatData> {
     let message = data["msg"].as_str()?.to_string();
     let time = data["msgTime"].as_u64().map(format_time).unwrap_or_default();
 
-    let os_type = data["extras"]
+    // extras를 한 번만 파싱해서 os_type과 emojis 동시 추출
+    let extras: Option<serde_json::Value> = data["extras"]
         .as_str()
-        .and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok())
+        .and_then(|s| serde_json::from_str(s).ok());
+
+    // 주석: os_type은 왜 저장하는거고, 지금은 어디에 사용되고있어?
+    let os_type = extras
+        .as_ref()
         .and_then(|e| e["osType"].as_str().map(str::to_string))
+        .unwrap_or_default();
+
+    let emojis: HashMap<String, String> = extras
+        .as_ref()
+        .and_then(|e| e["emojis"].as_object())
+        .map(|obj| {
+            obj.iter()
+                .map(|(k, v)| (k.clone(), v.as_str().unwrap_or("").to_string()))
+                .collect()
+        })
         .unwrap_or_default();
 
     // 익명 후원자
@@ -189,6 +212,7 @@ fn parse_chat(data: &serde_json::Value, chat_type: &str) -> Option<ChatData> {
             message,
             color_code: String::new(),
             badges: vec![],
+            emojis,
             subscription_month: 0,
             os_type,
             user_role: "common_user".to_string(),
@@ -238,10 +262,60 @@ fn parse_chat(data: &serde_json::Value, chat_type: &str) -> Option<ChatData> {
         message,
         color_code,
         badges,
+        emojis,
         subscription_month,
         os_type,
         user_role,
     })
+}
+
+/// URL → 캐시 파일 경로 계산 (DefaultHasher 사용, 외부 crate 불필요)
+fn url_to_cache_path(url: &str, cache_dir: &Path) -> PathBuf {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+    let mut hasher = DefaultHasher::new();
+    url.hash(&mut hasher);
+    let hash = hasher.finish();
+    // URL에서 확장자 추출 ('?' 이전 부분의 마지막 .ext)
+    let ext = url
+        .split('?')
+        .next()
+        .and_then(|s| s.rsplit('.').next())
+        .filter(|e| e.len() <= 5)
+        .unwrap_or("webp");
+    cache_dir.join(format!("{:016x}.{}", hash, ext))
+}
+
+/// 이미지 URL → 로컬 캐시 파일 경로 반환.
+/// 이미 캐시되어 있으면 즉시 반환, 없으면 다운로드 후 저장.
+/// 실패 시 원본 URL 그대로 반환 (네트워크 직접 로드 폴백).
+async fn cache_image(url: &str, cache_dir: &Path, client: &reqwest::Client) -> String {
+    if url.is_empty() {
+        return url.to_string();
+    }
+    let path = url_to_cache_path(url, cache_dir);
+    if path.exists() {
+        return path.to_string_lossy().to_string();
+    }
+    if let Ok(()) = std::fs::create_dir_all(cache_dir) {
+        if let Ok(resp) = client.get(url).send().await {
+            if let Ok(bytes) = resp.bytes().await {
+                let _ = std::fs::write(&path, &bytes);
+                return path.to_string_lossy().to_string();
+            }
+        }
+    }
+    url.to_string()
+}
+
+/// ChatData 내 모든 배지/이모지 URL을 로컬 캐시 경로로 교체
+async fn cache_images(chat: &mut ChatData, cache_dir: &Path, client: &reqwest::Client) {
+    for url in chat.badges.iter_mut() {
+        *url = cache_image(url, cache_dir, client).await;
+    }
+    for url in chat.emojis.values_mut() {
+        *url = cache_image(url, cache_dir, client).await;
+    }
 }
 
 fn format_time(ms: u64) -> String {
@@ -256,7 +330,6 @@ fn format_time(ms: u64) -> String {
 fn write_log(log_dir: &PathBuf, chat: &ChatData) {
     let date = chrono::Local::now().format("%Y-%m-%d").to_string();
     let log_path = log_dir.join(format!("{date}.log"));
-    // let Ok(()) = 문법이 잘 이해안가
     if let Ok(()) = std::fs::create_dir_all(log_dir) {
         let line = if chat.chat_type == "후원" {
             format!("[{}] [후원] {}: {}\n", chat.time, chat.nickname, chat.message)
@@ -267,7 +340,7 @@ fn write_log(log_dir: &PathBuf, chat: &ChatData) {
             .create(true)
             .append(true)
             .open(&log_path)
-        {   // 왜 여기 괄호는 이렇게 닫은거지?
+        {   // 질문: 여기에 괄호는 왜 이렇게 한줄 아래에 만든거야? 권장되는 형태야?
             let _ = file.write_all(line.as_bytes());
         }
     }

@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct ChatData {
@@ -8,7 +9,8 @@ pub struct ChatData {
     pub nickname: String,
     pub message: String,
     pub color_code: String,
-    pub badges: Vec<String>,     // 이미지 URL 목록 (최대 3개)
+    pub badges: Vec<String>,     // 이미지 로컬경로 or URL (최대 3개)
+    pub emojis: HashMap<String, String>,  // {이모지이름: 로컬경로 or URL}
     pub subscription_month: u32,
     pub os_type: String,         // "PC" | "MOBILE"
     pub user_role: String,       // "common_user" | "manager" | "streamer"

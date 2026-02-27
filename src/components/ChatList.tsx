@@ -7,9 +7,20 @@ interface ChatListProps {
   showTimestamp: boolean;
   showBadges: boolean;
   donationOnly: boolean;
+  searchQuery: string;
+  selectedUid: string | null;
+  onNicknameClick: (uid: string, nickname: string) => void;
 }
 
-export default function ChatList({ chats, showTimestamp, showBadges, donationOnly }: ChatListProps) {
+export default function ChatList({
+  chats,
+  showTimestamp,
+  showBadges,
+  donationOnly,
+  searchQuery,
+  selectedUid,
+  onNicknameClick,
+}: ChatListProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const atBottomRef = useRef(true);   // useState와 달리 렌더링없이 값 유지
 
@@ -26,9 +37,24 @@ export default function ChatList({ chats, showTimestamp, showBadges, donationOnl
     atBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 10;
   };
 
-  const visible = donationOnly
+  // 필터 적용: donationOnly → selectedUid(최근 500건) → searchQuery
+  let visible = donationOnly
     ? chats.filter((c) => c.chat_type === "후원")
     : chats;
+
+  if (selectedUid) {
+    // 유저별 이력: 해당 유저 메시지만, 최근 500건으로 제한 (메모리 관리)
+    visible = visible.filter((c) => c.uid === selectedUid).slice(-500);
+  }
+
+  if (searchQuery) {
+    const q = searchQuery.toLowerCase();
+    visible = visible.filter(
+      (c) =>
+        c.nickname.toLowerCase().includes(q) ||
+        c.message.toLowerCase().includes(q)
+    );
+  }
 
   return (
     <div
@@ -42,6 +68,7 @@ export default function ChatList({ chats, showTimestamp, showBadges, donationOnl
           chat={chat}
           showTimestamp={showTimestamp}
           showBadges={showBadges}
+          onNicknameClick={onNicknameClick}
         />
       ))}
     </div>

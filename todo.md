@@ -38,30 +38,36 @@
 - [x] 재연결 로직 (끊김 감지 → 5초 대기 후 채널ID/토큰 재발급 → 재연결)
 - [x] `disconnect_chat` 커맨드 (AbortHandle로 워커 중단)
 
-## Phase 5: 채팅 기능 완성
+## Phase 5: 채팅 기능 완성 ✅
 - [x] 닉네임 색상 (color_code 기반, 해시 팔레트) — Phase 2에서 완료
 - [x] 배지 이미지 렌더링 (최대 3개) — Phase 2에서 완료
 - [x] 후원 메시지 강조 표시 (배경색) — Phase 2에서 완료
 - [x] 후원만 보기 토글 — Phase 2에서 완료
 - [x] 설정 (타임스탬프, 배지 표시 토글) — Phase 2에서 완료
 - [x] 메모리 관리 (최대 10,000건) — Phase 4에서 완료
-- [ ] 채팅 로그 파일 기록 (log/{channel}/YYYY-MM-DD.log)
-- [ ] 설정 확장 (폰트 크기 UI, 설정 영구 저장)
+- [x] 채팅 로그 파일 기록 (log/{channel}/YYYY-MM-DD.log)
+- [x] 설정 확장 (폰트 크기 UI, 설정 영구 저장)
 
-## Phase 6: 편의 기능
-- [ ] 이모지 치환 + 이미지 캐시
-  - [ ] `types.rs`: ChatData에 `emojis: HashMap<String, String>` 필드 추가
-  - [ ] `chat.rs`: extras에서 emojis 파싱 후 ChatData에 포함
-  - [ ] `ChatItem.tsx`: `{:name:}` 패턴을 `<img>` 태그로 렌더링
-  - [ ] 배지/이모지 URL → 로컬 파일 캐시 (재시작 후 재사용)
-- [ ] 검색 기능 (Ctrl+F, 닉네임/메시지 필터)
-- [ ] 유저별 채팅 이력 (닉네임 클릭 → 해당 유저 채팅만 표시)
-- [ ] 메모리 관리 고도화 (유저별 최근 500건 제한)
+## Phase 6: 편의 기능 ✅
+- [x] 이모지 치환 + 이미지 캐시
+  - [x] `types.rs`: ChatData에 `emojis: HashMap<String, String>` 필드 추가
+  - [x] `chat.rs`: extras에서 emojis 파싱 후 ChatData에 포함
+  - [x] `ChatItem.tsx`: `{:name:}` 패턴을 `<img>` 태그로 렌더링
+  - [x] 배지/이모지 URL → 로컬 파일 캐시 (재시작 후 재사용)
+- [x] 검색 기능 (Ctrl+F, 닉네임/메시지 필터)
+- [x] 유저별 채팅 이력 (닉네임 클릭 → 해당 유저 채팅만 표시)
+- [x] 메모리 관리 고도화 (유저별 최근 500건 제한)
+
+## Phase 7: 앱 완성도 개선 ✅
+- [x] 앱 아이콘 적용 (chzzk.png → Tauri 아이콘 생성 + MenuBar 표시)
+- [x] 이미지 캐시 채널별 분리 (`cache/{channel_name}/`)
+- [x] 창 크기/위치 저장 및 복원 (tauri-plugin-window-state)
+- [x] 시스템 트레이 (닫기 → 트레이 최소화, 클릭 → 창 표시/숨기기 토글)
 
 ## 나중에
-- [ ] 창 크기/위치 저장 및 복원
-- [ ] 시스템 트레이 (최소화)
-- [ ] 자동 업데이트 (tauri-plugin-updater + GitHub Releases)
-- [ ] GitHub Actions CI/CD (.deb, .exe 자동 빌드)
 - [ ] 다크/라이트 테마 전환
 - [ ] 여러 스트리머 동시 모니터링 (탭)
+
+## 나중에 (배포, 최후순위)
+- [ ] 자동 업데이트 (tauri-plugin-updater + GitHub Releases)
+- [ ] GitHub Actions CI/CD (.deb, .exe 자동 빌드)

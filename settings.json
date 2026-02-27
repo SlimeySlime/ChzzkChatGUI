@@ -1,6 +1,6 @@
 {
   "font_size": 13,
-  "show_timestamp": false,
+  "show_timestamp": true,
   "show_badges": true,
   "donation_only": false
 }

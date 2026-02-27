@@ -27,7 +27,8 @@ export default defineConfig(async () => ({
       : undefined,
     watch: {
       // 3. tell Vite to ignore watching `src-tauri`
-      ignored: ["**/src-tauri/**"],
+      // 4. 앱이 직접 쓰는 파일들도 제외 (reload 방지)
+      ignored: ["**/src-tauri/**", "**/settings.json", "**/cookies.json", "**/log/**", "**/cache/**"],
     },
   },
 }));
