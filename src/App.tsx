@@ -9,6 +9,11 @@ import ChatList from "./components/ChatList";
 
 let dummyCounter = 0;
 
+function pushChats(prev: ChatData[], items: ChatData[]): ChatData[] {
+  const next = [...prev, ...items];
+  return next.length > 12000 ? next.slice(-10000) : next;
+}
+
 export default function App() {
   const [uid, setUid] = useState("");
   const [status, setStatus] = useState<ConnectionStatus>("idle");
@@ -57,11 +62,11 @@ export default function App() {
   // Rust에서 emit("chat-message", ...) 이벤트 수신
   useEffect(() => {
     const unlisten = listen<ChatData>("chat-message", (event) => {
-      setChats((prev) => {
-        const next = [...prev, event.payload];
-        return next.length > 12000 ? next.slice(-10000) : next;
-      });
+      // Q. setChats([...chats, event.payload]) 하는것과 pushChats 메서드를 사용하는것의 차이는 뭐야?
+      // pushChats는 단순히 slicing 기능만 하는거 아냐?
+      setChats((prev) => pushChats(prev, [event.payload]));
     });
+    // listen이 Promise<UnlistenFn> 을 반환하기 때문에, .then((fn) => fn()) 형태로 비동기처리
     return () => { unlisten.then((fn) => fn()); };
   }, []);
 
@@ -118,26 +123,59 @@ export default function App() {
     setSelectedNickname(nickname);
   };
 
-  // 더미 메시지 추가 (자동 스크롤 테스트용)
+  // 스트레스 테스트 interval ref
+  const stressIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // useRef<ReturnType<typeof setInterval> | null> 과 같은 복잡한 방식이 권장되는 일반적인 방식이야? 내가 잘 모르는걸까
+  const [isStressTesting, setIsStressTesting] = useState(false);
+
+  // 더미 메시지 1건 추가 (자동 스크롤 테스트용)
   const addDummyMessage = () => {
     dummyCounter++;
     const isDonation = dummyCounter % 7 === 0;
-    setChats((prev) => [
-      ...prev,
-      {
-        uid: `user${(dummyCounter % 6) + 1}01`,
-        nickname: `유저${dummyCounter}`,
-        message: `테스트 메시지 ${dummyCounter}번`,
-        time: new Date().toTimeString().slice(0, 8),
-        chat_type: isDonation ? "후원" : "채팅",
-        color_code: ["", "SG001", "SG002", "SG004"][dummyCounter % 4],
-        badges: [],
-        emojis: {},
-        subscription_month: 0,
-        os_type: "PC",
-        user_role: "common_user",
-      },
-    ]);
+    setChats((prev) => pushChats(prev, [{
+      uid: `user${(dummyCounter % 6) + 1}01`,
+      nickname: `유저${dummyCounter}`,
+      message: `테스트 메시지 ${dummyCounter}번`,
+      time: new Date().toTimeString().slice(0, 8),
+      chat_type: isDonation ? "후원" : "채팅",
+      color_code: ["", "SG001", "SG002", "SG004"][dummyCounter % 4],
+      badges: [],
+      emojis: {},
+      subscription_month: 0,
+      os_type: "PC",
+      user_role: "common_user",
+    }]));
+  };
+
+  // 스트레스 테스트: 1초마다 100건 배치 추가, 12000건 초과 시 10000건으로 컷팅
+  const toggleStressTest = () => {
+    if (stressIntervalRef.current) {
+      clearInterval(stressIntervalRef.current);
+      stressIntervalRef.current = null;
+      setIsStressTesting(false);
+    } else {
+      setIsStressTesting(true);
+      stressIntervalRef.current = setInterval(() => {
+        const batch = Array.from({ length: 100 }, () => {
+          dummyCounter++;
+          const isDonation = dummyCounter % 7 === 0;
+          return {
+            uid: `user${(dummyCounter % 6) + 1}01`,
+            nickname: `유저${dummyCounter}`,
+            message: `테스트 메시지 ${dummyCounter}번`,
+            time: new Date().toTimeString().slice(0, 8),
+            chat_type: isDonation ? "후원" : "채팅",
+            color_code: ["", "SG001", "SG002", "SG004"][dummyCounter % 4],
+            badges: [] as string[],
+            emojis: {} as Record<string, string>,
+            subscription_month: 0,
+            os_type: "PC",
+            user_role: "common_user",
+          };
+        });
+        setChats((prev) => pushChats(prev, batch));
+      }, 1000);
+    }
   };
 
   return (
@@ -206,7 +244,7 @@ export default function App() {
       {selectedUid && (
         <div className="px-2 py-1 bg-neutral-700 border-b border-neutral-600 flex items-center text-xs">
           <span className="text-neutral-300">
-            👤 <span className="text-white">{selectedNickname}</span> 채팅만 보기
+            👤 <span className="text-white">{selectedNickname}</span> 메시지 내역
           </span>
           <button
             onClick={() => setSelectedUid(null)}
@@ -226,12 +264,18 @@ export default function App() {
       />
 
       {/* 개발용: 더미 메시지 추가 버튼 */}
-      <div className="px-2 py-1 bg-neutral-950 border-t border-neutral-800">
+      <div className="px-2 py-1 bg-neutral-950 border-t border-neutral-800 flex gap-3">
         <button
           onClick={addDummyMessage}
           className="text-xs text-neutral-500 hover:text-neutral-300"
         >
-          [DEV] 더미 메시지 추가
+          [DEV] 더미 1건
+        </button>
+        <button
+          onClick={toggleStressTest}
+          className={`text-xs ${isStressTesting ? "text-red-400 hover:text-red-300" : "text-neutral-500 hover:text-neutral-300"}`}
+        >
+          [DEV] 스트레스 {isStressTesting ? "중지 ■" : "시작 ▶ (100건/초)"}
         </button>
       </div>
     </div>
