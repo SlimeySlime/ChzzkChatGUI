@@ -336,3 +336,64 @@ parse_chat() → cache_images() → app_handle.emit("chat-message") → write_lo
 - Ubuntu GNOME에서 트레이 아이콘을 보려면 `gnome-shell-extension-appindicator` 설치 필요
 
 ---
+
+## 버그 수정 및 개선 (Phase 7 이후)
+
+### Windows 환경 설정 수정
+
+**문제**: Ubuntu에서 커밋된 프로젝트를 Windows에서 실행 시 `bun`을 찾을 수 없다는 오류 발생
+
+**원인**: `tauri.conf.json`의 `beforeDevCommand` / `beforeBuildCommand`가 `bun run dev/build`로 설정되어 있었으나 Windows에 bun 미설치
+
+**해결**: `tauri.conf.json`에서 `bun` → `npm`으로 변경
+
+---
+
+### 이모지 메모리 누수 수정 (`chat.rs`)
+
+**문제**: 장시간(1시간+) 연결 시 WebView out of memory 발생. 더미 데이터(배지/이모지 없음)로는 재현 안 됨.
+
+**원인**: Chzzk WebSocket API는 `extras.emojis`에 채널 이모지 세트 전체(수십~수백 개)를 매 메시지마다 전송함. 기존 코드는 이를 필터링 없이 각 ChatData에 저장했고, `cache_images()`가 사용하지 않는 이모지 이미지까지 전부 다운로드 및 캐시.
+
+메시지 수 × 채널 이모지 수 = JS 힙 폭증 (20,000건 × 100이모지 = 수백 MB)
+
+**해결** (`parse_chat`): 메시지 텍스트에서 `{:name:}` 패턴을 먼저 추출, 실제 사용된 이모지만 emojis 맵에 보존. 미사용 이모지는 폐기.
+
+```
+사용 전: 채널 이모지 전체 (100개) × 모든 메시지
+사용 후: 메시지에 실제 쓰인 이모지만 (0~3개)
+```
+
+---
+
+### 더미 테스트 데이터 개선 (`lib.rs`, `App.tsx`)
+
+**문제**: 기존 더미 데이터는 `badges: []`, `emojis: {}`로 생성되어 실제 이미지 메모리 동작을 테스트할 수 없었음
+
+**해결**:
+- `get_dummy_assets` Tauri 커맨드 추가: 실제 `cache/` 이미지 파일 경로 목록 + `log/` 파싱 결과(닉네임·메시지·후원 여부) 반환
+- `App.tsx`: 앱 시작 시 `get_dummy_assets` 호출. 로그에서 실제 사용된 이모지 이름 추출 → 캐시 파일에 round-robin 매핑
+- 더미 메시지에 실제 캐시 이미지(배지 0~2개)와 전체 이모지맵 포함 → 실제 API 동작과 동일한 메모리 환경 재현 가능
+
+---
+
+### 버그 수정: 트레이 아이콘 버튼 무동작
+
+**원인**: Tauri v2에서 프론트엔드의 `getCurrentWindow().hide()` 호출은 capability 권한 필요. `capabilities/default.json`에 `core:window:allow-hide`가 누락되어 있어 버튼 클릭이 무시됨 (Rust 측 트레이 이벤트 핸들러는 서버 사이드라 권한 불필요).
+
+**해결**: `capabilities/default.json`에 `"core:window:allow-hide"` 추가
+
+---
+
+### 버그 수정: 빠른 채팅 수신 시 자동 스크롤 멈춤 (`ChatList.tsx`)
+
+**현상**: 채팅이 빠르게 올라올 때 스크롤이 최하단에 있어도 새 메시지를 따라가지 않고 고정됨
+
+**원인**: `scrollTop = scrollHeight` 대입이 브라우저의 scroll 이벤트를 동기적으로 발생시킴. `handleScroll`이 이 이벤트를 받아 `atBottomRef`를 계산하는데, 이 시점에 브라우저 레이아웃이 아직 새 항목 높이를 반영하기 전일 수 있어 `scrollHeight - scrollTop - clientHeight > 10` 조건을 만족 → `atBottomRef = false`로 잘못 설정.
+
+이후 메시지 도착 시 `atBottomRef`가 `false`이므로 스크롤을 시도하지 않아 고정된 상태 지속.
+
+**해결**:
+- `isProgrammaticRef` 플래그 추가: 코드가 직접 스크롤하는 동안 발생하는 scroll 이벤트를 `handleScroll`이 무시하도록 함
+- `setTimeout(0)`으로 scroll 이벤트 처리 후 플래그 해제
+- 하단 판정 임계값을 10px → 50px로 완화 (빠른 렌더링 중 미세한 오차 허용)

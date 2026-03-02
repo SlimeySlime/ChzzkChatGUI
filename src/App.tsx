@@ -9,6 +9,55 @@ import ChatList from "./components/ChatList";
 
 let dummyCounter = 0;
 
+interface DummyAssets {
+  cacheFiles: string[];
+  logEntries: { nickname: string; message: string; is_donation: boolean }[];
+  // 로그에서 추출한 이모지 이름 → 캐시 파일 경로 매핑
+  // 채널 이모지 세트 전체를 매 메시지에 담는 API 동작을 시뮬레이션
+  emojiMap: Record<string, string>;
+}
+
+const dummyAssets: DummyAssets = { cacheFiles: [], logEntries: [], emojiMap: {} };
+
+function makeDummyChat(counter: number): ChatData {
+  const { cacheFiles, logEntries, emojiMap } = dummyAssets;
+  const hasAssets = cacheFiles.length > 0;
+
+  const entry = logEntries.length > 0
+    ? logEntries[counter % logEntries.length]
+    : null;
+
+  const nickname = entry?.nickname ?? `유저${counter}`;
+  const message  = entry?.message  ?? `테스트 메시지 ${counter}번`;
+  const isDonation = entry?.is_donation ?? counter % 7 === 0;
+
+  // 배지: 캐시 파일에서 0~2개 선택 (유저 인덱스 기반)
+  const userSlot = counter % 50;
+  const numBadges = userSlot % 3;
+  const badges = hasAssets
+    ? Array.from({ length: numBadges }, (_, i) =>
+        cacheFiles[(userSlot * 3 + i) % cacheFiles.length]
+      )
+    : [];
+
+  // 이모지: 채널 전체 이모지 세트 복사 (API 동작과 동일하게 매 메시지에 전체 포함)
+  const emojis = hasAssets ? { ...emojiMap } : {};
+
+  return {
+    uid: `dummy_user_${userSlot}`,
+    nickname,
+    message,
+    time: new Date().toTimeString().slice(0, 8),
+    chat_type: isDonation ? "후원" : "채팅",
+    color_code: ["", "SG001", "SG002", "SG004"][counter % 4],
+    badges,
+    emojis,
+    subscription_month: userSlot === 0 ? 12 : 0,
+    os_type: counter % 5 === 0 ? "MOBILE" : "PC",
+    user_role: userSlot === 0 ? "manager" : "common_user",
+  };
+}
+
 function pushChats(prev: ChatData[], items: ChatData[]): ChatData[] {
   const next = [...prev, ...items];
   return next.length > 12000 ? next.slice(-10000) : next;
@@ -51,6 +100,35 @@ export default function App() {
       setShowTimestamp(s.show_timestamp);
       setShowBadges(s.show_badges);
       setDonationOnly(s.donation_only);
+    });
+  }, []);
+
+  // 더미 테스트용 에셋 로드 (1회): 실제 캐시 이미지 + 로그 닉네임/메시지
+  useEffect(() => {
+    invoke<{
+      cache_files: string[];
+      log_entries: { nickname: string; message: string; is_donation: boolean }[];
+    }>("get_dummy_assets").then((data) => {
+      // 로그 메시지에서 실제 사용된 이모지 이름 추출 ({:name:} 패턴)
+      const emojiPattern = /\{:(\w+):\}/g;
+      const emojiNames = new Set<string>();
+      for (const entry of data.log_entries) {
+        for (const m of entry.message.matchAll(emojiPattern)) {
+          emojiNames.add(m[1]);
+        }
+      }
+      // 이모지 이름 → 캐시 파일 경로 (round-robin 매핑)
+      // 정확한 매핑은 아니지만 실제 이미지가 로드되어 메모리 동작을 테스트할 수 있음
+      const emojiMap: Record<string, string> = {};
+      [...emojiNames].forEach((name, i) => {
+        if (data.cache_files.length > 0) {
+          emojiMap[name] = data.cache_files[i % data.cache_files.length];
+        }
+      });
+
+      dummyAssets.cacheFiles = data.cache_files;
+      dummyAssets.logEntries = data.log_entries;
+      dummyAssets.emojiMap = emojiMap;
     });
   }, []);
 
@@ -130,21 +208,7 @@ export default function App() {
 
   // 더미 메시지 1건 추가 (자동 스크롤 테스트용)
   const addDummyMessage = () => {
-    dummyCounter++;
-    const isDonation = dummyCounter % 7 === 0;
-    setChats((prev) => pushChats(prev, [{
-      uid: `user${(dummyCounter % 6) + 1}01`,
-      nickname: `유저${dummyCounter}`,
-      message: `테스트 메시지 ${dummyCounter}번`,
-      time: new Date().toTimeString().slice(0, 8),
-      chat_type: isDonation ? "후원" : "채팅",
-      color_code: ["", "SG001", "SG002", "SG004"][dummyCounter % 4],
-      badges: [],
-      emojis: {},
-      subscription_month: 0,
-      os_type: "PC",
-      user_role: "common_user",
-    }]));
+    setChats((prev) => pushChats(prev, [makeDummyChat(++dummyCounter)]));
   };
 
   // 스트레스 테스트: 1초마다 100건 배치 추가, 12000건 초과 시 10000건으로 컷팅
@@ -156,23 +220,7 @@ export default function App() {
     } else {
       setIsStressTesting(true);
       stressIntervalRef.current = setInterval(() => {
-        const batch = Array.from({ length: 100 }, () => {
-          dummyCounter++;
-          const isDonation = dummyCounter % 7 === 0;
-          return {
-            uid: `user${(dummyCounter % 6) + 1}01`,
-            nickname: `유저${dummyCounter}`,
-            message: `테스트 메시지 ${dummyCounter}번`,
-            time: new Date().toTimeString().slice(0, 8),
-            chat_type: isDonation ? "후원" : "채팅",
-            color_code: ["", "SG001", "SG002", "SG004"][dummyCounter % 4],
-            badges: [] as string[],
-            emojis: {} as Record<string, string>,
-            subscription_month: 0,
-            os_type: "PC",
-            user_role: "common_user",
-          };
-        });
+        const batch = Array.from({ length: 100 }, () => makeDummyChat(++dummyCounter));
         setChats((prev) => pushChats(prev, batch));
       }, 1000);
     }

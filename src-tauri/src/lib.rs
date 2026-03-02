@@ -146,6 +146,85 @@ fn disconnect_chat(state: tauri::State<'_, ChatState>) {
     }
 }
 
+/// 더미 테스트용: 실제 캐시 이미지 경로 목록 + 로그 파싱 결과 반환
+#[tauri::command]
+fn get_dummy_assets() -> serde_json::Value {
+    let app_dir = match app_dir() {
+        Ok(d) => d,
+        Err(_) => return serde_json::json!({ "cache_files": [], "log_entries": [] }),
+    };
+
+    // cache/ 하위 채널 폴더의 이미지 파일 전체 수집
+    let mut cache_files: Vec<String> = Vec::new();
+    let cache_dir = app_dir.join("cache");
+    if let Ok(channels) = fs::read_dir(&cache_dir) {
+        for channel in channels.flatten() {
+            if let Ok(files) = fs::read_dir(channel.path()) {
+                for file in files.flatten() {
+                    let path = file.path();
+                    if matches!(path.extension().and_then(|e| e.to_str()), Some("png" | "gif" | "webp")) {
+                        cache_files.push(path.to_string_lossy().to_string());
+                    }
+                }
+            }
+        }
+    }
+
+    // log/ 하위 채널별 최신 .log 파일 파싱
+    // 형식: [HH:MM:SS] nickname: message
+    //       [HH:MM:SS] [후원] nickname: message
+    let mut log_entries: Vec<serde_json::Value> = Vec::new();
+    let log_dir = app_dir.join("log");
+    if let Ok(channels) = fs::read_dir(&log_dir) {
+        for channel in channels.flatten() {
+            let mut log_files: Vec<_> = fs::read_dir(channel.path())
+                .ok()
+                .into_iter()
+                .flatten()
+                .flatten()
+                .filter(|e| e.path().extension().map_or(false, |x| x == "log"))
+                .collect();
+            log_files.sort_by_key(|e| e.path());
+
+            if let Some(latest) = log_files.last() {
+                if let Ok(content) = fs::read_to_string(latest.path()) {
+                    for line in content.lines() {
+                        // [HH:MM:SS] 이후 부분 추출
+                        let Some(rest) = line.strip_prefix('[') else { continue };
+                        let Some(after_time) = rest.find("] ") else { continue };
+                        let body = &rest[after_time + 2..];
+
+                        let (is_donation, body) = if let Some(r) = body.strip_prefix("[후원] ") {
+                            (true, r)
+                        } else {
+                            (false, body)
+                        };
+
+                        if let Some(colon) = body.find(": ") {
+                            log_entries.push(serde_json::json!({
+                                "nickname": &body[..colon],
+                                "message": &body[colon + 2..],
+                                "is_donation": is_donation,
+                            }));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // 로그는 최신 2000건만
+    if log_entries.len() > 2000 {
+        let start = log_entries.len() - 2000;
+        log_entries = log_entries[start..].to_vec();
+    }
+
+    serde_json::json!({
+        "cache_files": cache_files,
+        "log_entries": log_entries,
+    })
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -157,6 +236,7 @@ pub fn run() {
             disconnect_chat,
             get_settings,
             save_settings,
+            get_dummy_assets,
         ])
         .setup(|app| {
             // 시스템 트레이 설정

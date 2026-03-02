@@ -192,11 +192,30 @@ fn parse_chat(data: &serde_json::Value, chat_type: &str) -> Option<ChatData> {
         .and_then(|e| e["osType"].as_str().map(str::to_string))
         .unwrap_or_default();
 
+    // 메시지에서 실제 사용된 이모지 이름만 추출 ({:name:} 패턴)
+    // Chzzk API는 extras.emojis에 채널 이모지 세트 전체를 매 메시지마다 전송하므로
+    // 사용된 것만 필터링하지 않으면 20,000건 × N이모지 = JS 힙 폭증
+    let used_emojis: std::collections::HashSet<&str> = {
+        let mut set = std::collections::HashSet::new();
+        let mut s = message.as_str();
+        while let Some(start) = s.find("{:") {
+            s = &s[start + 2..];
+            if let Some(end) = s.find(":}") {
+                set.insert(&s[..end]);
+                s = &s[end + 2..];
+            } else {
+                break;
+            }
+        }
+        set
+    };
+
     let emojis: HashMap<String, String> = extras
         .as_ref()
         .and_then(|e| e["emojis"].as_object())
         .map(|obj| {
             obj.iter()
+                .filter(|(k, _)| used_emojis.contains(k.as_str()))
                 .map(|(k, v)| (k.clone(), v.as_str().unwrap_or("").to_string()))
                 .collect()
         })

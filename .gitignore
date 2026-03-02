@@ -25,3 +25,7 @@ cookies.json
 *.njsproj
 *.sln
 *.sw?
+
+# cache
+cache/
+
