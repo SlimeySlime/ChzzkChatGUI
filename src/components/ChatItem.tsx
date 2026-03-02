@@ -1,4 +1,4 @@
-import React from "react";
+import React, { memo } from "react";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { ChatData, getUserColor } from "../types/chat";
 
@@ -41,7 +41,8 @@ function renderMessage(msg: string, emojis: Record<string, string>): React.React
   });
 }
 
-export default function ChatItem({ chat, showTimestamp, showBadges, onNicknameClick }: ChatItemProps) {
+// memo: 가상 스크롤 환경에서 props가 바뀌지 않은 항목의 불필요한 재렌더링 방지
+export default memo(function ChatItem({ chat, showTimestamp, showBadges, onNicknameClick }: ChatItemProps) {
   const isDonation = chat.chat_type === "후원";
   const nickColor = isDonation ? "#ffcc00" : getUserColor(chat.uid, chat.color_code);
 
@@ -79,4 +80,4 @@ export default function ChatItem({ chat, showTimestamp, showBadges, onNicknameCl
       </span>
     </div>
   );
-}
+});

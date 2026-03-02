@@ -44,7 +44,7 @@
 - [x] 후원 메시지 강조 표시 (배경색) — Phase 2에서 완료
 - [x] 후원만 보기 토글 — Phase 2에서 완료
 - [x] 설정 (타임스탬프, 배지 표시 토글) — Phase 2에서 완료
-- [x] 메모리 관리 (최대 10,000건) — Phase 4에서 완료
+- [x] 메모리 관리 (최대 50,000건) — Phase 4에서 완료, Phase 8 이후 상향
 - [x] 채팅 로그 파일 기록 (log/{channel}/YYYY-MM-DD.log)
 - [x] 설정 확장 (폰트 크기 UI, 설정 영구 저장)
 
@@ -67,6 +67,12 @@
 ## 버그발견
 - [x] 트레이아이콘 버튼 아무런 동작안함
 - [x] 채팅이 빠르게 올라오는 경우, 스크롤이 아래에 있어도 새 채팅이 올라와도 최신 채팅으로 포커싱이 안되고, 스크롤이 고정되어있는 경우가 생김
+
+## Phase 8: 가상 스크롤 ✅
+- [x] `@tanstack/react-virtual` 설치
+- [x] `ChatList.tsx`: `useVirtualizer` 적용 — 화면에 보이는 항목만 DOM에 렌더링
+- [x] `ChatItem.tsx`: `React.memo` 적용 — 불필요한 재렌더링 방지
+- [x] 자동 스크롤 유지 — `virtualizer.scrollToIndex` + `isProgrammaticRef` 연동
 
 ## 나중에
 - [ ] 다크/라이트 테마 전환

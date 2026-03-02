@@ -397,3 +397,60 @@ parse_chat() → cache_images() → app_handle.emit("chat-message") → write_lo
 - `isProgrammaticRef` 플래그 추가: 코드가 직접 스크롤하는 동안 발생하는 scroll 이벤트를 `handleScroll`이 무시하도록 함
 - `setTimeout(0)`으로 scroll 이벤트 처리 후 플래그 해제
 - 하단 판정 임계값을 10px → 50px로 완화 (빠른 렌더링 중 미세한 오차 허용)
+
+---
+
+## Phase 8: 가상 스크롤 ✅
+
+### 배경
+
+장시간 실행 시 WebView2 메모리가 수 GB까지 증가하는 근본 원인 분석:
+- **이모지 맵 수정**(Phase 7 후)으로 JS 힙 문제는 해결됐으나, 메모리 증가 지속
+- `채팅 초기화`(setChats([])) 후에도 메모리가 거의 줄지 않음 → 원인이 React state가 아님
+- 원인: **Chromium 이미지 디코드 캐시** — `<img>` DOM 요소가 제거돼도 캐시는 유지됨
+- 10,000개 ChatItem이 DOM에 상주 → 각 배지/이모지 `<img>` 태그의 디코드 캐시가 누적
+- WebView2는 임베드 컴포넌트 특성상 OS 메모리 압박 신호를 제대로 받지 못해 캐시 미해제
+- 스트림 시간이 길어질수록 새로운 고유 사용자 → 새로운 배지 이미지 → 캐시 단조 증가
+
+### 해결 원리
+
+가상 스크롤: 전체 항목 수와 무관하게 **뷰포트에 보이는 항목만 DOM에 유지**
+
+```
+기존: 10,000개 <img> DOM 상주 → 10,000개 디코드 캐시 항목 보유
+가상: ~30개 <img>만 DOM 존재 → 뷰포트 밖 항목 DOM 제거 → Chromium 캐시 해제 가능
+```
+
+### 구현 내용
+
+**의존성 추가**
+- `@tanstack/react-virtual` — React 가상 스크롤 라이브러리
+
+**`ChatList.tsx` 전면 재작성**
+
+- `useVirtualizer({ count, getScrollElement, estimateSize, overscan })` 적용
+  - `estimateSize: () => 28` — 초기 추정 높이 (실제 높이는 measureElement가 측정)
+  - `overscan: 10` — 뷰포트 위아래 10개 추가 렌더링 (빠른 스크롤 시 공백 방지)
+- 렌더링 구조: 전체 높이를 가진 `position: relative` 컨테이너 + 각 항목 `position: absolute`
+  - 스크롤바가 전체 콘텐츠 길이를 정확히 반영하면서 DOM 노드는 최소로 유지
+- `virtualizer.measureElement` ref: 가변 높이 아이템(이모지, 긴 메시지 등) 실측
+- 자동 스크롤: 기존 `isProgrammaticRef` 패턴 유지, `scrollTop` 직접 조작 대신 `virtualizer.scrollToIndex` 사용
+- 필터 로직(donationOnly, selectedUid, searchQuery) 변경 없음
+
+**`ChatItem.tsx`**
+- `memo()` 래핑: props가 변경되지 않은 항목의 불필요한 재렌더링 방지
+  - 가상 스크롤 환경에서 새 메시지 추가 시 기존 표시 항목이 재렌더링되지 않음
+
+### 효과
+
+| | 이전 | 이후 |
+|---|---|---|
+| DOM 내 ChatItem 수 | 최대 10,000개 | 뷰포트 크기에 따라 ~30~50개 |
+| 활성 `<img>` 요소 수 | ~15,000개 (배지 포함) | ~50~150개 |
+| 장시간 메모리 증가 | 수 GB 단조 증가 | 안정적 유지 |
+| 스크롤 전체 항목 탐색 | ✓ | ✓ (변경 없음) |
+
+### 참고사항
+- `useVirtualizer`는 `count`가 변경될 때 내부 상태를 재계산하므로, 필터 결과 배열의 길이 변화를 자동으로 추적함
+- `measureElement` ref callback은 각 항목이 DOM에 마운트될 때 실제 높이를 측정하여 `estimateSize`의 오차를 보정
+- 가상 스크롤 적용 후 맨 위로 스크롤해도 이전 메시지 탐색 가능 (전체 항목은 state에 유지, DOM만 가상화)

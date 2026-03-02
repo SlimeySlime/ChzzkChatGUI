@@ -60,7 +60,7 @@ function makeDummyChat(counter: number): ChatData {
 
 function pushChats(prev: ChatData[], items: ChatData[]): ChatData[] {
   const next = [...prev, ...items];
-  return next.length > 12000 ? next.slice(-10000) : next;
+  return next.length > 60000 ? next.slice(-50000) : next;
 }
 
 export default function App() {
@@ -211,7 +211,7 @@ export default function App() {
     setChats((prev) => pushChats(prev, [makeDummyChat(++dummyCounter)]));
   };
 
-  // 스트레스 테스트: 1초마다 100건 배치 추가, 12000건 초과 시 10000건으로 컷팅
+  // 스트레스 테스트: 1초마다 100건 배치 추가, 60000건 초과 시 50000건으로 컷팅
   const toggleStressTest = () => {
     if (stressIntervalRef.current) {
       clearInterval(stressIntervalRef.current);
