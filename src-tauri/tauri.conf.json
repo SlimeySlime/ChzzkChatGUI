@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "chzzkchattauri",
+  "productName": "Chzzk Chat Log",
   "version": "0.1.0",
   "identifier": "com.frogs.chzzkchat",
   "build": {
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "chzzkchattauri",
+        "title": "Chzzk Chat Log",
         "width": 800,
         "height": 600
       }

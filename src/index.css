@@ -30,16 +30,11 @@ body {
   font-size: var(--chat-font-size);
 }
 
-/* 메뉴 드롭다운 */
+/* 메뉴 드롭다운 — 열림/닫힘은 React state로 제어 (openMenu === name 조건부 렌더링) */
 .menu-dropdown {
   position: relative;
 }
-.menu-dropdown:focus-within .menu-panel,
-.menu-dropdown:hover .menu-panel {
-  display: block;
-}
 .menu-panel {
-  display: none;
   position: absolute;
   top: 100%;
   left: 0;

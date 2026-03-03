@@ -12,55 +12,54 @@ use types::Cookies;
 /// 채팅 워커 task의 AbortHandle 보관.
 /// connect_chat으로 task를 시작하고, disconnect_chat으로 중단.
 struct ChatState(Mutex<Option<tokio::task::AbortHandle>>);
-// Mutex<Option<AbortHandle>> 문법이 좀 낯선데, 설명이 필요해.
+// 질문: Mutex<Option<AbortHandle>> 문법이 좀 낯선데, 설명이 필요해.
 
-/// settings.json, log/ 등 앱 파일을 읽고 쓸 디렉토리 반환.
-/// dev: 프로젝트 루트 (exe 4단계 위, cookies.json이 있는 곳)
-/// 배포: 실행 파일 옆 디렉토리
+/// settings.json, log/, cache/ 등 앱 파일을 읽고 쓸 디렉토리 반환.
+/// dev:  exe가 src-tauri/target/debug/ 에 있으므로 4단계 위 = 프로젝트 루트
+/// prod: 실행 파일 옆 디렉토리 (포터블 방식 — exe 옆에 cookies.json/log/cache 위치)
 fn app_dir() -> Result<PathBuf, String> {
     let exe = std::env::current_exe().map_err(|e| e.to_string())?;
 
-    // dev 환경: cookies.json이 있는 프로젝트 루트를 우선
-    // 주석: ancestors().nth() 와 같은 방식말고 좀더 안전하고, 좋은 방법이 없을까?
-    // 아니면 이게 Rust 권장방식인가?
-    if let Some(dir) = exe.ancestors().nth(4) {
-        if dir.join("cookies.json").exists() {
+    #[cfg(debug_assertions)]
+    {
+        // debug 빌드 전용: src-tauri/target/debug/exe → 4단계 위 = 프로젝트 루트
+        // 주석: ancestors().nth() 와 같은 방식말고 좀더 안전하고, 좋은 방법이 없을까?
+        // 아니면 이게 Rust 권장방식인가?
+        if let Some(dir) = exe.ancestors().nth(4) {
             return Ok(dir.to_path_buf());
         }
     }
-    // 배포: 실행 파일 옆
+
+    // release 빌드: 실행 파일 옆 (exe를 어디에 두든 그 폴더를 사용)
+    // 질문: .map(|p| p.to_path_buf()) 와 같은 문법도 설명해줘
     exe.parent()
         .map(|p| p.to_path_buf())
-        .ok_or("실행 파일 경로를 찾을 수 없습니다".to_string())
-    // 주석: .map(|p| p.to_path_buf()) 와 같은 문법도 설명해줘
+        .ok_or_else(|| "실행 파일 경로를 찾을 수 없습니다".to_string())
 }
 
 fn load_cookies() -> Result<Cookies, String> {
-    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+    let path = app_dir()?.join("cookies.json");
+    let content = fs::read_to_string(&path)
+        .map_err(|e| format!("cookies.json 읽기 실패 ({:?}): {}", path, e))?;
+    serde_json::from_str::<Cookies>(&content).map_err(|e| e.to_string())
+}
 
-    // 탐색할 후보 경로 목록
-    // 1) 실행 파일 옆 (배포 환경)
-    // 2) 4단계 위 (dev: .../src-tauri/target/debug/exe → ... → 프로젝트 루트)
-    // TODO: 현재 dev 환경에서는 잘 작동함. 그런데 배포시에도 이런 방식이 괜찮을까?
-    let candidates: Vec<_> = [
-        exe.parent().map(|d| d.join("cookies.json")),
-        exe.ancestors().nth(4).map(|d| d.join("cookies.json")),
-    ]
-    .into_iter()
-    .flatten()
-    .collect();
-
-    for path in &candidates {
-        if path.exists() {
-            let content = fs::read_to_string(path).map_err(|e| e.to_string())?;
-            return serde_json::from_str::<Cookies>(&content).map_err(|e| e.to_string());
-        }
+/// 창의 현재 크기·위치를 settings.json에 저장.
+/// Wayland 등 위치 조회가 불가한 환경에서는 위치 저장을 건너뜀.
+/// 호출 시점: X 버튼(CloseRequested), 트레이 숨기기 버튼, 트레이 아이콘 클릭 숨기기
+fn save_win_state(win: &tauri::WebviewWindow, dir: &PathBuf) {
+    let Ok(size) = win.inner_size() else { return };
+    // 질문: Ok(Size) = win.inner_size() else { return }; 문법도 설명해줘
+    // Ok(Size) 는 어떤 구문이지? 
+    let mut s = settings::load(dir);
+    s.window_width = size.width;
+    s.window_height = size.height;
+    // outer_position()은 Wayland에서 실패할 수 있음 — 실패 시 기존 값 유지
+    if let Ok(pos) = win.outer_position() {
+        s.window_x = Some(pos.x);
+        s.window_y = Some(pos.y);
     }
-
-    Err(format!(
-        "cookies.json을 찾을 수 없습니다. 탐색한 경로: {:?}",
-        candidates
-    ))
+    let _ = settings::save(dir, &s);
 }
 
 /// 저장된 설정을 반환. 없으면 기본값.
@@ -69,12 +68,27 @@ fn get_settings() -> settings::Settings {
     app_dir()
         .map(|dir| settings::load(&dir))
         .unwrap_or_default()
+        // 질문: unwrap_or_default() 는 무슨 뜻의 함수야?
 }
 
 /// 설정을 settings.json에 저장.
 #[tauri::command]
 fn save_settings(s: settings::Settings) -> Result<(), String> {
     settings::save(&app_dir()?, &s)
+    // Result<(), String> 타입에서 Ok(())는 성공시 빈 반환값, Err(String)은 실패 메시지 반환.
+}
+
+/// 트레이로 숨기기 전에 창 상태를 저장하고 창을 숨김.
+/// MenuBar의 "트레이 아이콘" 버튼에서 호출 (프론트엔드에서 직접 hide()하면 저장 안 됨).
+#[tauri::command]
+fn hide_to_tray(app_handle: tauri::AppHandle) {
+    if let Some(win) = app_handle.get_webview_window("main") {
+        if let Ok(dir) = app_dir() {
+            save_win_state(&win, &dir);
+        }
+        let _ = win.hide();
+        // 질문: win.hide() 가 아니라, let _ = win.hide(); 한 이유는 뭐야?
+    }
 }
 
 /// 연결에 필요한 정보를 조회하고 채팅 워커(WebSocket) 시작.
@@ -230,15 +244,42 @@ pub fn run() {
     tauri::Builder::default()
         .manage(ChatState(Mutex::new(None)))
         .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_window_state::Builder::default().build())
         .invoke_handler(tauri::generate_handler![
             connect_chat,
             disconnect_chat,
             get_settings,
             save_settings,
             get_dummy_assets,
+            hide_to_tray,
         ])
         .setup(|app| {
+            // 저장된 창 크기·위치 복원
+            let dir = app_dir().unwrap_or_else(|_| PathBuf::from("."));
+            let saved = settings::load(&dir);
+
+            if let Some(win) = app.get_webview_window("main") {
+                // PhysicalSize: 실제 픽셀 단위 (DPI 스케일 적용 전). 고DPI 모니터에서도 정확하게 복원됨
+                let _ = win.set_size(tauri::Size::Physical(tauri::PhysicalSize {
+                    width: saved.window_width,
+                    height: saved.window_height,
+                }));
+                if let (Some(x), Some(y)) = (saved.window_x, saved.window_y) {
+                    // Wayland에서는 set_position이 무시될 수 있음 (compositor가 배치 결정)
+                    let _ = win.set_position(tauri::Position::Physical(
+                        tauri::PhysicalPosition { x, y },
+                    ));
+                }
+
+                // X 버튼(CloseRequested)으로 닫을 때 창 상태 저장
+                let win_for_close = win.clone();
+                let dir_for_close = dir.clone();
+                win.on_window_event(move |event| {
+                    if let tauri::WindowEvent::CloseRequested { .. } = event {
+                        save_win_state(&win_for_close, &dir_for_close);
+                    }
+                });
+            }
+
             // 시스템 트레이 설정
             // app.default_window_icon(): tauri.conf.json의 bundle.icon에서 자동 로드됨
             let icon = app.default_window_icon()
@@ -259,6 +300,10 @@ pub fn run() {
                         if let Some(win) = app.get_webview_window("main") {
                             if matches!(win.is_visible(), Ok(true)) {
                                 // matches! 매크로없을때 에러는 왜 발생한거고, 왜 수정한거야?
+                                // 트레이로 숨기기 전에 창 상태 저장
+                                if let Ok(dir) = app_dir() {
+                                    save_win_state(&win, &dir);
+                                }
                                 let _ = win.hide();
                             } else {
                                 let _ = win.show();

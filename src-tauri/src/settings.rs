@@ -1,12 +1,33 @@
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
+fn default_font_size() -> u32 { 13 }
+fn default_bool_true() -> bool { true }
+fn default_window_width() -> u32 { 800 }
+fn default_window_height() -> u32 { 600 }
+
 #[derive(Serialize, Deserialize, Clone)]
 pub struct Settings {
+    // 기존 필드: 이미 저장된 settings.json에 항상 존재하므로 #[serde(default)] 불필요
+    #[serde(default = "default_font_size")]
     pub font_size: u32,
+    #[serde(default = "default_bool_true")]
     pub show_timestamp: bool,
+    #[serde(default = "default_bool_true")]
     pub show_badges: bool,
+    #[serde(default)]
     pub donation_only: bool,
+
+    // 창 상태: 기존 settings.json에 없으므로 #[serde(default)] 필수
+    // (없으면 serde 역직렬화 실패 → unwrap_or_default()로 폴백 → 기존 설정 날아감)
+    #[serde(default = "default_window_width")]
+    pub window_width: u32,
+    #[serde(default = "default_window_height")]
+    pub window_height: u32,
+    #[serde(default)]
+    pub window_x: Option<i32>,
+    #[serde(default)]
+    pub window_y: Option<i32>,
 }
 
 impl Default for Settings {
@@ -16,6 +37,10 @@ impl Default for Settings {
             show_timestamp: true,
             show_badges: true,
             donation_only: false,
+            window_width: 800,
+            window_height: 600,
+            window_x: None,
+            window_y: None,
         }
     }
 }

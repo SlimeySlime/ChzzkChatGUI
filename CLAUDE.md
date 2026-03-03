@@ -3,7 +3,7 @@
 Chzzk 채팅 뷰어를 Tauri(React + TypeScript + Rust)로 처음부터 구현.
 Rust와 Tauri를 학습하면서 단계적으로 진행하는 프로젝트.
 
-**현재 단계: Phase 7 완료 (나중에 항목 대기 중)**
+**현재 단계: Phase 9 완료 (Phase 10 대기 중)**
 
 ## 기술 스택
 
@@ -30,7 +30,8 @@ ChzzkChatTauri/
 │   │   ├── lib.rs            # Tauri 앱 초기화 + 커맨드 등록
 │   │   ├── api.rs            # Chzzk REST API
 │   │   ├── chat.rs           # WebSocket 채팅 워커
-│   │   └── types.rs          # 공유 데이터 구조체
+│   │   ├── types.rs          # 공유 데이터 구조체
+│   │   └── settings.rs       # 설정 구조체 + 저장/로드
 │   └── Cargo.toml
 └── package.json
 ```
@@ -40,11 +41,11 @@ ChzzkChatTauri/
 ### Frontend → Backend (invoke)
 ```typescript
 import { invoke } from "@tauri-apps/api/core";
-const result = await invoke("connect_chat", { uid: "streamer_uid" });
+const result = await invoke("connect_chat", { streamerUid: "abc123" });
 ```
 ```rust
 #[tauri::command]
-async fn connect_chat(uid: String) -> Result<String, String> { ... }
+async fn connect_chat(streamer_uid: String) -> Result<serde_json::Value, String> { ... }
 ```
 
 ### Backend → Frontend (emit/listen)
@@ -71,12 +72,43 @@ pub struct ChatData {
     pub nickname: String,
     pub message: String,
     pub color_code: String,
-    pub badges: Vec<String>,      // 이미지 URL 목록 (최대 3개)
+    pub badges: Vec<String>,      // 로컬 캐시 경로 (최대 3개)
+    pub emojis: HashMap<String, String>, // {이름: 로컬 캐시 경로}
     pub subscription_month: u32,
     pub os_type: String,          // "PC" | "MOBILE"
     pub user_role: String,        // "common_user" | "manager" | "streamer"
 }
 ```
+
+## 설정 구조체 (Rust)
+
+```rust
+pub struct Settings {
+    pub font_size: u32,           // 기본값: 13
+    pub show_timestamp: bool,     // 기본값: true
+    pub show_badges: bool,        // 기본값: true
+    pub donation_only: bool,      // 기본값: false
+    pub window_width: u32,        // 기본값: 800
+    pub window_height: u32,       // 기본값: 600
+    pub window_x: Option<i32>,    // 기본값: None
+    pub window_y: Option<i32>,    // 기본값: None
+}
+```
+새 필드 추가 시 `#[serde(default)]` 필수 — 없으면 기존 settings.json 역직렬화 실패 시 전체 초기화됨.
+
+## app_dir() — dev/prod 경로 분기
+
+```rust
+fn app_dir() -> Result<PathBuf, String> {
+    let exe = std::env::current_exe()?;
+    #[cfg(debug_assertions)]
+    { /* exe 4단계 위 = 프로젝트 루트 */ }
+    // release: exe 옆 디렉토리 (포터블 방식)
+    exe.parent().map(|p| p.to_path_buf())...
+}
+```
+- `cfg!(debug_assertions)`: 컴파일 타임 분기 → debug 빌드만 프로젝트 루트 사용
+- release 빌드: exe 옆에 `cookies.json`, `log/`, `cache/`, `settings.json` 생성
 
 ## 레퍼런스 소스 (Flet 구현)
 
@@ -104,4 +136,10 @@ npm run tauri build  # 배포 빌드
 
 3. **비동기 처리**: WebSocket은 별도 tokio task로 실행, Tauri emit으로 UI 업데이트.
 
-4. **메모리 관리**: 채팅 최대 10,000건 유지 (초과 시 오래된 것 제거).
+4. **메모리 관리**: 채팅 최대 60,000건 유지 (초과 시 50,000건으로 컷), 가상 스크롤로 DOM은 ~30개만 유지.
+
+5. **트레이 숨기기**: `getCurrentWindow().hide()` 직접 호출 금지.
+   반드시 `invoke("hide_to_tray")` 경유 → Rust에서 창 상태 저장 후 숨김.
+
+6. **이모지 메모리**: Chzzk API는 채널 이모지 전체를 매 메시지마다 전송.
+   `parse_chat()`에서 실제 사용된 이모지만 필터링하여 메모리 폭증 방지.

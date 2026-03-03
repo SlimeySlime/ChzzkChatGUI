@@ -67,6 +67,8 @@
 ## 버그발견
 - [x] 트레이아이콘 버튼 아무런 동작안함
 - [x] 채팅이 빠르게 올라오는 경우, 스크롤이 아래에 있어도 새 채팅이 올라와도 최신 채팅으로 포커싱이 안되고, 스크롤이 고정되어있는 경우가 생김
+- [x] 메뉴바 버튼 클릭시 드롭다운이 열리고, 다시 클릭시에 드롭다운이 해제되지않음
+- [x] dev 구동시와는 달리, build된 .exe파일 구동시 log 폴더 없음
 
 ## Phase 8: 가상 스크롤 ✅
 - [x] `@tanstack/react-virtual` 설치
@@ -74,9 +76,20 @@
 - [x] `ChatItem.tsx`: `React.memo` 적용 — 불필요한 재렌더링 방지
 - [x] 자동 스크롤 유지 — `virtualizer.scrollToIndex` + `isProgrammaticRef` 연동
 
-## 나중에
-- [ ] 다크/라이트 테마 전환
-- [ ] 여러 스트리머 동시 모니터링 (탭)
+## Phase 9: 버그 수정 ✅
+- [x] 메뉴바 드롭다운 재클릭 시 안 닫히는 버그 수정 (CSS → React state)
+- [x] 빌드 `.exe` 실행 시 log 폴더 잘못된 경로 버그 수정 (`cfg!(debug_assertions)` 분기)
+- [x] 창 크기·위치를 `tauri-plugin-window-state` 대신 `settings.json`으로 통합 관리
+
+## Phase 10: 다크/라이트 테마 전환
+- [ ] Tailwind `dark:` prefix + `<html class="dark">` 토글
+- [ ] `Settings`에 `theme` 필드 추가 및 복원
+- [ ] MenuBar 설정 드롭다운에 전환 버튼 추가
+
+## Phase 11: 여러 스트리머 동시 모니터링 (탭)
+- [ ] Rust: `ChatState` → `HashMap<uid, AbortHandle>`, 이벤트명 `chat-message-{uid}` 분리
+- [ ] Frontend: `tabs[]` state, `activeTab`, 탭바 UI
+- [ ] 탭 최대 수 제한 (예: 5개), 전역 설정 공유
 
 ## 나중에 (배포, 최후순위)
 - [ ] 자동 업데이트 (tauri-plugin-updater + GitHub Releases)

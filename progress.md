@@ -454,3 +454,77 @@ parse_chat() → cache_images() → app_handle.emit("chat-message") → write_lo
 - `useVirtualizer`는 `count`가 변경될 때 내부 상태를 재계산하므로, 필터 결과 배열의 길이 변화를 자동으로 추적함
 - `measureElement` ref callback은 각 항목이 DOM에 마운트될 때 실제 높이를 측정하여 `estimateSize`의 오차를 보정
 - 가상 스크롤 적용 후 맨 위로 스크롤해도 이전 메시지 탐색 가능 (전체 항목은 state에 유지, DOM만 가상화)
+
+---
+
+## Phase 9: 버그 수정 ✅
+
+### 버그 1: 메뉴바 드롭다운 재클릭 시 안 닫힘
+
+**원인**: `index.css`의 `.menu-dropdown:hover`/`:focus-within` CSS만으로 드롭다운을 제어하고 있었음. 버튼 클릭 후 포커스가 유지되면 `:focus-within` 조건이 계속 참이라 재클릭해도 닫히지 않음.
+
+**왜 CSS만으로는 불가능한가**: "재클릭 닫기 + 외부 클릭 닫기 + 다른 메뉴 열면 현재 닫기" 세 조건을 동시에 만족하려면 JS(React state)가 필수. CSS는 클릭 상태를 기억하지 못함.
+
+**해결** (`MenuBar.tsx`):
+- `openMenu: string | null` state 추가
+- `toggle(name)`: 같은 메뉴 재클릭 → `null`, 다른 메뉴 클릭 → 전환
+- `handleAction(fn)`: 메뉴 항목 클릭 시 액션 실행 + `setOpenMenu(null)`
+- `menuBarRef` + `mousedown` 이벤트로 외부 클릭 감지 → 닫힘
+- `{openMenu === "options" && <div>...}` 조건부 렌더링으로 전환
+
+**해결** (`index.css`):
+- `.menu-dropdown:focus-within .menu-panel`, `.menu-dropdown:hover .menu-panel` 규칙 제거
+- `.menu-panel`의 `display: none` 제거 (조건부 렌더링으로 대체)
+
+---
+
+### 버그 2: 빌드 `.exe` 실행 시 log/cache 경로 오동작
+
+**원인**: `app_dir()`이 런타임에 `cookies.json` 존재 여부로 dev/prod를 구분하고 있었음. release 빌드된 `.exe`도 `src-tauri/target/release/` 경로에서 실행하면 4단계 위가 프로젝트 루트이고 거기에 `cookies.json`이 있으면 프로젝트 루트를 사용함. NSIS 설치 후 `AppData\Local\...`에서 실행하면 `ancestors().nth(4)` = 유저 홈 디렉토리로 올라가버려 cookies.json 미발견 → exe 옆(AppData)으로 폴백 → 사용자가 로그 위치를 못 찾음.
+
+**해결** (`lib.rs`):
+```rust
+fn app_dir() -> Result<PathBuf, String> {
+    let exe = std::env::current_exe()?;
+    #[cfg(debug_assertions)]
+    { /* 프로젝트 루트 (4단계 위) */ }
+    // release: exe 옆 (포터블 방식)
+    exe.parent().map(|p| p.to_path_buf())...
+}
+```
+- `cfg!(debug_assertions)`: 컴파일 타임에 debug/release 분기 → 런타임 경로 탐색 불필요
+- release 빌드는 exe를 어디에 두든 항상 exe 옆 디렉토리 사용 (포터블)
+- `load_cookies()`도 `app_dir()` 기반으로 단순화 (기존: 후보 경로 복수 탐색)
+
+---
+
+### 창 크기·위치: `tauri-plugin-window-state` → `settings.json` 통합
+
+**배경**: 플러그인은 Linux Wayland에서 위치 복원 불가 (`set_position()` compositor가 무시), 상태 파일도 AppData에 별도 저장되어 포터블 방식과 맞지 않음.
+
+**`settings.rs` 변경**:
+- `window_width: u32`, `window_height: u32`, `window_x: Option<i32>`, `window_y: Option<i32>` 추가
+- **중요**: 새 필드에 `#[serde(default)]` 필수. 없으면 기존 settings.json(새 필드 없음) 역직렬화 실패 시 `unwrap_or_default()`로 폴백되어 font_size 등 기존 설정 전체가 초기화됨.
+
+**`lib.rs` 변경**:
+- `save_win_state(win, dir)` 헬퍼: `inner_size()` 저장, `outer_position()`은 실패(Wayland) 시 건너뜀
+- 저장 시점 3곳:
+  1. X 버튼 → `on_window_event(CloseRequested)`
+  2. "트레이 아이콘" 버튼 → `hide_to_tray` 커맨드 (저장 후 `win.hide()`)
+  3. 트레이 아이콘 클릭 숨기기 → tray handler 내 `save_win_state` 호출
+- `setup()`: `PhysicalSize`/`PhysicalPosition`으로 저장된 크기·위치 복원
+- `hide_to_tray` 커맨드 추가 및 `invoke_handler`에 등록
+
+**`MenuBar.tsx` 변경**:
+- `getCurrentWindow().hide()` → `invoke("hide_to_tray")`
+- 직접 `hide()`하면 저장 없이 숨겨지므로 Rust 커맨드 경유 필수
+
+**`Cargo.toml` 변경**:
+- `tauri-plugin-window-state = "2"` 제거
+
+**플랫폼별 동작**:
+| 환경 | 크기 복원 | 위치 복원 |
+|------|---------|---------|
+| Windows | ✅ | ✅ |
+| Linux X11 | ✅ | ✅ |
+| Linux Wayland | ✅ | ❌ (compositor가 배치 결정, 저장은 됨) |
