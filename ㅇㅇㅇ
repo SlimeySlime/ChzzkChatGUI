@@ -1,0 +1,151 @@
+4. useEffect — 4개의 목적
+
+  ① 앱 시작 시 설정 로드 (1회)
+
+  useEffect(() => {
+    invoke("get_settings").then((s) => {
+      settingsRef.current = s;
+      setFontSize(s.font_size);
+      // ...
+    });
+  }, []); // ← 빈 배열
+
+  [] 의존성 배열이 빈 배열이면 컴포넌트가 처음 마운트될 때 딱 1번만 실행돼. 설정 파일을
+  한 번만 읽으면 되니까 이게 맞아.
+
+  ② 폰트 크기 CSS 변수 동기화
+
+  useEffect(() => {
+    document.documentElement.style.setProperty("--chat-font-size", `${fontSize}px`);
+  }, [fontSize]); // ← fontSize가 바뀔 때마다
+
+  [fontSize]는 fontSize 값이 바뀔 때마다 실행. React 상태가 바뀌면 → CSS 변수도
+  동기화해주는 "상태를 외부(DOM)와 동기화" 패턴이야. useEffect는 기본적으로 "React 바깥
+  세계와 소통"할 때 쓰는 훅이라고 생각하면 이해가 쉬워.
+
+  ③ Rust 이벤트 수신 (구독 + 정리)
+
+  useEffect(() => {
+    const unlisten = listen<ChatData>("chat-message", (event) => {
+      setChats((prev) => pushChats(prev, [event.payload]));
+    });
+    return () => { unlisten.then((fn) => fn()); }; // ← cleanup
+  }, []);
+
+  cleanup 함수 (return 부분) 가 중요해. listen은 이벤트 리스너를 등록하는데, 컴포넌트가
+  언마운트(종료)될 때 이걸 정리하지 않으면 메모리 누수가 발생해. return () => {
+  unlisten... }을 반환하면 React가 컴포넌트 종료 시 자동으로 호출해줘.
+
+  listen이 Promise<UnlistenFn>을 반환하기 때문에 .then((fn) => fn())으로 비동기 처리하는
+  것도 포인트.
+
+  ④ 키보드 이벤트 (등록 + 정리)
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => { ... };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown); // cleanup
+  }, []);
+
+  ③과 같은 패턴. addEventListener/removeEventListener 쌍으로 메모리 누수를 방지.
+
+  ---
+  5. 이벤트 핸들러들
+
+  handleToggleConnect
+
+  const handleToggleConnect = async () => {
+    if (isConnected) {
+      invoke("disconnect_chat");  // await 없음
+      setStatus("idle");
+    } else {
+      setStatus("connecting");
+      try {
+        const match = uid.match(/chzzk\.naver\.com\/(?:live\/)?([a-f0-9]+)/);
+        const streamerUid = match ? match[1] : uid;
+        const info = await invoke("connect_chat", { streamerUid });
+        setStatus("connected");
+      } catch (e) {
+        setStatus("disconnected");
+      }
+    }
+  };
+
+  연결 해제 시 disconnect_chat에 await가 없어. 결과를 기다릴 필요가 없기 때문 — 끊는 건
+  그냥 signal만 보내면 돼. 반면 연결 시도는 성공/실패 결과에 따라 상태를 다르게 처리해야
+  하므로 await.
+
+  handleNicknameClick — 토글 패턴
+
+  const handleNicknameClick = (uid: string, nickname: string) => {
+    setSelectedUid((prev) => (prev === uid ? null : uid)); // 같은 유저면 해제
+    setSelectedNickname(nickname);
+  };
+
+  setSelectedUid에 값 대신 함수를 전달하고 있어. 이 패턴(prev => ...)은 "직전 상태를
+  기반으로 다음 상태를 계산"할 때 사용해. 삼항 연산자로 토글 처리가 깔끔하게 됨.
+
+  ---
+  6. JSX의 조건부 렌더링
+
+  {errorMsg && <div>...</div>}
+  {showSearch && <div>...</div>}
+  {selectedUid && <div>...</div>}
+
+  && 연산자 활용. errorMsg가 빈 문자열("")이면 falsy라서 렌더링 안 됨. selectedUid가
+  null이면 역시 안 됨.
+
+  ---
+  7. 리팩토링 포인트
+
+  ① DEV 코드가 컴포넌트 안에 섞여 있음
+
+  addDummyMessage, toggleStressTest, stressIntervalRef, isStressTesting, DEV 버튼 JSX —
+  이게 프로덕션 코드와 섞여 있어. 나중에 지우기도 불편하고 가독성도 떨어져.
+
+  개선안: if (import.meta.env.DEV) 조건으로 분리하거나, <DevPanel> 컴포넌트로 분리.
+
+  ② 설정 관련 상태가 분산되어 있음
+
+  const [donationOnly, setDonationOnly] = useState(false);
+  const [showTimestamp, setShowTimestamp] = useState(true);
+  const [showBadges, setShowBadges] = useState(true);
+  const [fontSize, setFontSize] = useState(13);
+  const settingsRef = useRef({ font_size: 13, ... }); // ← 초기값 중복
+
+  초기값이 useState와 settingsRef 두 곳에 하드코딩 되어 있어. 설정 기본값이 바뀌면
+  2군데를 수정해야 함.
+
+  개선안:
+  const DEFAULT_SETTINGS = { font_size: 13, show_timestamp: true, show_badges: true,
+  donation_only: false };
+  const settingsRef = useRef(DEFAULT_SETTINGS);
+  const [fontSize, setFontSize] = useState(DEFAULT_SETTINGS.font_size);
+  // ...
+
+  ③ MenuBar에 인라인 핸들러가 많음
+
+  onToggleDonationOnly={() => {
+    const next = !donationOnly;
+    setDonationOnly(next);
+    applySettings({ donation_only: next });
+  }}
+
+  이게 4개 반복돼. 공통 패턴이라 별도 함수로 묶을 수 있어:
+
+  const toggleSetting = <K extends keyof typeof settingsRef.current>(
+    setter: (v: boolean) => void,
+    key: K,
+    currentVal: boolean
+  ) => {
+    const next = !currentVal;
+    setter(next);
+    applySettings({ [key]: next });
+  };
+
+  다만 이건 코드가 오히려 복잡해 보일 수 있어서 현재 규모에서는 현상 유지도 나쁘지 않아.
+
+  ---
+  전체적으로는 규모에 비해 잘 구조화되어 있어. 특히 pushChats 를 공통 함수로 분리한 것,
+  settingsRef로 stale closure를 해결한 것은 좋은 패턴이야. 가장 실질적인 개선 포인트는
+  DEV 코드 분리와 설정 기본값 중복 제거 두 가지야.
