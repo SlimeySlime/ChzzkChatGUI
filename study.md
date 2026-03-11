@@ -23,6 +23,7 @@ Java/JS/Python/C# 경험자가 Rust 입문할 때 자주 막히는 포인트를 
 15. [#[cfg(debug_assertions)] — 컴파일 타임 분기](#15-cfgdebug_assertions--컴파일-타임-분기)
 16. [? 연산자 — 에러 전파](#16--연산자--에러-전파)
 17. [가상 스크롤 (@tanstack/react-virtual)](#17-가상-스크롤-tanstackreact-virtual)
+18. [GitHub Actions release.yml 구조 설명](#18-github-actions-releaseyml-구조-설명)
 
 ---
 
@@ -753,6 +754,153 @@ export default memo(function ChatItem({ chat, showTimestamp, showBadges, ... }) 
 가상 스크롤로 새 메시지가 추가되면 `visible` 배열이 바뀌어 `ChatList`가 리렌더된다.
 `memo` 없이는 뷰포트에 보이는 모든 ChatItem이 매번 재렌더된다.
 `memo`를 쓰면 **props가 바뀐 항목만** 재렌더 → 새로 추가된 항목만 렌더링.
+
+---
+
+## 18. GitHub Actions release.yml 구조 설명
+
+```yaml
+on:
+  push:
+    tags:
+      - 'v*'
+```
+
+### 언제 실행되나?
+
+`git tag v0.2.0 && git push origin v0.2.0` 처럼 **`v`로 시작하는 태그를 push할 때만** 실행된다.
+일반 `git push`로는 실행되지 않는다.
+
+---
+
+### jobs.build.strategy.matrix
+
+```yaml
+strategy:
+  fail-fast: false
+  matrix:
+    include:
+      - platform: ubuntu-22.04
+        target: x86_64-unknown-linux-gnu
+      - platform: windows-latest
+        target: x86_64-pc-windows-msvc
+```
+
+**matrix**: 같은 job을 여러 환경에서 병렬 실행하는 기능.
+위 설정이면 Ubuntu와 Windows에서 동시에 빌드가 돌아간다.
+
+**fail-fast: false**: 한 플랫폼이 실패해도 나머지 플랫폼 빌드를 계속 진행.
+`true`면 Ubuntu가 실패하면 Windows 빌드도 즉시 중단된다.
+
+---
+
+### steps 단계별 설명
+
+```yaml
+- uses: actions/checkout@v4
+```
+현재 repo 코드를 Actions runner에 다운로드. 모든 워크플로우의 첫 단계.
+
+---
+
+```yaml
+- name: Setup Node.js
+  uses: actions/setup-node@v4
+  with:
+    node-version: '20'
+    cache: 'npm'
+```
+Node.js 20 설치. `cache: 'npm'`으로 `node_modules`를 Actions 캐시에 저장해서
+다음 실행 때 `npm install` 속도를 높인다.
+
+---
+
+```yaml
+- name: Setup Rust
+  uses: dtolnay/rust-toolchain@stable
+```
+Rust 안정(stable) 버전 설치. Actions runner에는 Rust가 기본으로 없어서 직접 설치해야 한다.
+
+---
+
+```yaml
+- name: Cache Rust dependencies
+  uses: swatinem/rust-cache@v2
+  with:
+    workspaces: src-tauri
+```
+`src-tauri/target/` 폴더를 캐시. Rust 빌드는 첫 번째에 5~15분 걸리지만,
+캐시가 있으면 이후 실행은 1~2분으로 단축된다.
+
+---
+
+```yaml
+- name: Install Linux dependencies
+  if: matrix.platform == 'ubuntu-22.04'
+  run: |
+    sudo apt-get install -y libwebkit2gtk-4.1-dev ...
+```
+`if` 조건으로 Ubuntu에서만 실행. WebKit(WebView 엔진)은 Linux에서 시스템 패키지로 따로 설치해야 한다.
+Windows는 WebView2가 OS에 내장되어 있어 불필요.
+
+---
+
+```yaml
+- name: Build Tauri app
+  uses: tauri-apps/tauri-action@v0
+  env:
+    GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+  with:
+    tagName: ${{ github.ref_name }}
+    releaseName: 'ChzzkChat ${{ github.ref_name }}'
+    releaseDraft: true
+    includeUpdaterJson: true
+```
+
+**tauri-apps/tauri-action**: Tauri 공식 Action. `npm run tauri build`를 실행하고 결과물을 GitHub Release에 업로드까지 해준다.
+
+**secrets**: GitHub repo Settings → Secrets에 저장한 값. 코드에 노출되지 않음.
+- `GITHUB_TOKEN`: GitHub이 자동 발급. Release 생성/업로드 권한에 사용.
+- `TAURI_SIGNING_PRIVATE_KEY`: 우리가 등록한 서명 비밀키. 빌드 결과물에 서명할 때 사용.
+
+**`${{ github.ref_name }}`**: 트리거된 태그 이름. `v0.2.0` 태그로 push했으면 `v0.2.0`.
+
+**`releaseDraft: true`**: Release를 바로 공개하지 않고 **Draft 상태**로 생성.
+GitHub Releases 페이지에서 릴리즈 노트 작성 후 수동으로 Publish.
+
+**`includeUpdaterJson: true`**: `latest.json` 파일을 Release에 추가로 업로드.
+앱 내 자동 업데이트 체크 시 이 파일을 읽어서 새 버전 여부를 판단한다.
+
+---
+
+### 전체 흐름 요약
+
+```
+로컬: git tag v0.2.0 && git push origin v0.2.0
+         ↓
+GitHub Actions 자동 시작 (Ubuntu + Windows 병렬)
+         ↓
+각 runner에서:
+  1. 코드 다운로드
+  2. Node.js, Rust 설치 (캐시 활용)
+  3. npm install
+  4. npm run tauri build (서명 포함)
+  5. 결과물을 GitHub Release Draft에 업로드
+         ↓
+GitHub Releases 페이지에 Draft 생성됨
+  → 릴리즈 노트 작성 후 Publish
+         ↓
+앱 실행 시: latest.json 체크 → 새 버전이면 업데이트 배너 표시
+```
+
+### 빌드 결과물
+
+| 플랫폼 | 생성 파일 |
+|--------|----------|
+| Ubuntu | `.deb`, `.AppImage` |
+| Windows | `.exe` (NSIS 설치 프로그램), `.msi` |
+| 공통 | `latest.json` (업데이터 메타데이터) |
 
 ---
 
