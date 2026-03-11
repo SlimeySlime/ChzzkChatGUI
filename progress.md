@@ -680,3 +680,115 @@ export function newTab(): Tab { ... }
 - `unlistenMap`을 `useRef<Map>` (ref of Map)으로 관리: state에 넣으면 listen 등록마다 리렌더링 발생
 - `activeTabIdRef`는 keydown 이벤트 핸들러 closure의 stale capture 방지용. `useEffect([], [])` 내 등록된 핸들러는 초기 `activeTabId` 값에 고정되므로 ref를 통해 최신값 참조 필요
 - 이벤트명 `chat-message-{uid}`: 탭이 같은 채널에 중복 연결 시 동일 이벤트를 두 탭이 모두 수신하는 문제 있음 → 현재는 connect 시 기존 워커 abort로 단일 연결 보장
+
+---
+
+## Phase 12: 배포 자동화 🚧 진행 중
+
+### 현재 상태
+- v0.2.0 빌드까지 완료. v0.3.0 배포 후 실제 자동 업데이트 동작 검증 예정.
+
+### 서명 키 구조
+
+Tauri 업데이터는 **ed25519 서명**으로 배포 파일 위변조를 검증한다.
+
+```
+npm run tauri -- signer generate --ci
+  → 비밀키(private key): GitHub Secrets에 저장 (TAURI_SIGNING_PRIVATE_KEY)
+  → 공개키(public key): tauri.conf.json plugins.updater.pubkey에 저장 (커밋 OK)
+```
+
+빌드 시 Actions에서 비밀키로 서명 → 앱 실행 시 공개키로 서명 검증 → 위변조 방지.
+
+### `.github/workflows/release.yml`
+
+`v*` 태그 push 시 Ubuntu + Windows 병렬 빌드 후 GitHub Release Draft 자동 생성.
+
+```
+git tag v0.2.0 && git push origin v0.2.0
+  → Actions 자동 실행
+  → Ubuntu: .deb, .AppImage 빌드
+  → Windows: .exe, .msi 빌드
+  → latest.json 생성 (업데이터 메타데이터)
+  → GitHub Release Draft에 모든 파일 업로드
+  → Draft → Publish 후 latest endpoint 활성화
+```
+
+**주요 설정:**
+- `fail-fast: false`: 한 플랫폼 실패해도 나머지 계속
+- `releaseDraft: true`: 자동 공개 방지, 릴리즈 노트 작성 후 수동 Publish
+- `includeUpdaterJson: true`: `latest.json` 자동 생성 및 첨부
+- `swatinem/rust-cache`: `src-tauri/target/` 캐시로 빌드 시간 단축
+
+### `tauri.conf.json` 업데이터 설정
+
+```json
+"plugins": {
+  "updater": {
+    "pubkey": "...(공개키)...",
+    "endpoints": [
+      "https://github.com/SlimeySlime/ChzzkChatGUI/releases/latest/download/latest.json"
+    ]
+  }
+}
+```
+
+엔드포인트의 `releases/latest`는 **Published 릴리즈** 중 가장 최신을 가리킨다. Draft 상태면 감지 안 됨.
+
+### `App.tsx` 업데이트 UI
+
+앱 시작 시 1회 `check()` 호출 → 새 버전이면 상단에 파란 배너 표시:
+
+```tsx
+// 앱 시작 시 체크
+check().then((update) => {
+  if (update?.available) setUpdateAvailable({ version, body });
+}).catch(() => {}); // 오프라인 시 무시
+
+// UI: 파란 배너 + "지금 업데이트" 버튼
+await update.downloadAndInstall();
+await relaunch(); // tauri-plugin-process
+```
+
+### 의존성 추가
+
+**Cargo.toml:**
+```toml
+tauri-plugin-updater = "2"
+tauri-plugin-process = "2"  # relaunch() 제공
+```
+
+**package.json:**
+```
+@tauri-apps/plugin-updater
+@tauri-apps/plugin-process
+```
+
+**capabilities/default.json:**
+```json
+"updater:default",
+"process:allow-restart"
+```
+
+### 릴리즈 버전 올리는 법
+
+세 파일 버전을 동일하게 맞춰야 한다:
+- `tauri.conf.json`: `"version": "0.3.0"`
+- `Cargo.toml`: `version = "0.3.0"`
+- `package.json`: `"version": "0.3.0"`
+
+```bash
+git add . && git commit -m "bump version to 0.3.0"
+git push
+git tag v0.3.0
+git push origin v0.3.0
+```
+
+### dev 환경에서 테스트 불가
+
+`npm run tauri dev`는 debug 빌드라 업데이터 비활성화됨. 실제 자동 업데이트는 release 빌드된 앱에서만 동작. UI 확인만 하려면 App.tsx에서 `setUpdateAvailable` 임시 강제 호출로 배너 확인 가능.
+
+### 참고사항
+- `latest.json` 엔드포인트: `releases/latest` = Published 릴리즈 기준. Draft는 미포함.
+- 비밀키 분실 시 업데이터 서명 불가 → 별도 보관 필수.
+- 태그명(`v0.3.0`)과 `tauri.conf.json` 버전(`0.3.0`) 앞에 `v` 유무만 다른 형태로 일치해야 버전 비교가 정상 동작.

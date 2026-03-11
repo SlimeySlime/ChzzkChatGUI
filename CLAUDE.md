@@ -3,7 +3,7 @@
 Chzzk 채팅 뷰어를 Tauri(React + TypeScript + Rust)로 처음부터 구현.
 Rust와 Tauri를 학습하면서 단계적으로 진행하는 프로젝트.
 
-**현재 단계: Phase 11 완료**
+**현재 단계: Phase 12 진행 중 (배포 자동화 — 자동 업데이트 검증 대기)**
 
 ## 기술 스택
 
@@ -160,6 +160,17 @@ npm run tauri dev    # 개발 서버 (Rust + React 핫리로드)
 npm run tauri build  # 배포 빌드
 ```
 
+## 릴리즈 명령어
+
+```bash
+# 세 파일 버전 동일하게 수정: tauri.conf.json, Cargo.toml, package.json
+git add . && git commit -m "bump version to 0.x.0"
+git push
+git tag v0.x.0
+git push origin v0.x.0
+# → GitHub Actions 자동 빌드 시작 → Releases에 Draft 생성 → Publish
+```
+
 ## 주요 주의사항
 
 1. **WebSocket ping**: Chzzk 서버는 클라이언트 WebSocket ping에 응답하지 않음.
@@ -181,3 +192,8 @@ npm run tauri build  # 배포 빌드
    탭 닫기/연결 해제 시 반드시 `unlisten()` 호출 — 누락 시 닫힌 탭에 메시지가 계속 쌓임.
 
 8. **동일 채널 중복 연결**: `connect_chat` 커맨드에서 `streamer_uid`가 이미 HashMap에 있으면 기존 워커를 abort 후 재연결. 두 탭에서 같은 채널 연결 시 두 번째 탭이 첫 번째 탭의 워커를 빼앗음.
+
+9. **자동 업데이트**: dev 빌드에서는 동작 안 함. release 빌드된 앱에서만 `check()` 실제 작동.
+   `releases/latest` 엔드포인트는 **Published 릴리즈** 기준 — Draft 상태면 감지 불가.
+
+10. **릴리즈 버전 3파일 동기화**: `tauri.conf.json`, `Cargo.toml`, `package.json` 버전이 모두 일치해야 함. 태그는 `v` 접두사 붙인 형태 (`0.2.0` → `v0.2.0`).

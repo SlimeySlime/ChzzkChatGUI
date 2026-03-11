@@ -388,7 +388,7 @@ export default function App() {
       />
 
       {/* DEV */}
-      <div className="px-2 py-1 bg-theme-deep border-t border-theme flex gap-3">
+      <div className="px-2 py-1 hidden bg-theme-deep border-t border-theme flex gap-3">
         <button onClick={addDummyMessage} className="text-xs text-theme-muted hover:text-theme-secondary">
           [DEV] 더미 1건
         </button>
