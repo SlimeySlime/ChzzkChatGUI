@@ -614,3 +614,69 @@ Tailwind v4 `@utility` 디렉티브로 유틸리티 클래스 등록:
 - `[data-theme]` 셀렉터는 `:root` 변수보다 specificity가 높아 기본값 override 필요 없음
 - `@utility`로 정의한 커스텀 클래스는 Tailwind v4에서 `hover:`, `focus:` 등 변형 자동 지원
 - `data-theme`은 `<html>` 요소에 설정 — 하위 모든 CSS 변수가 cascading으로 적용됨
+
+---
+
+## Phase 11: 여러 스트리머 동시 모니터링 (탭) ✅
+
+### 설계 결정
+
+탭 최대 5개 제한. 탭별 독립적인 채팅 스트림, 검색, 유저 필터.
+전역 설정(폰트 크기, 테마, 타임스탬프 등)은 모든 탭 공유.
+
+워커 동시 실행 성능 검토:
+- 각 탭 = 독립 tokio task(경량 비동기 스레드) + WebSocket 연결 1개
+- 5탭 동시 연결 시 약 5개 WebSocket, CPU/메모리 영향 미미 (I/O 바운드)
+- 기존 단일 `Option<AbortHandle>` → `HashMap<String, AbortHandle>` 최소 변경으로 지원
+
+### 구현 내용
+
+**`src/types/tab.ts` (신규)**
+```typescript
+export interface Tab {
+  tabId: string;
+  uid: string;             // 입력 필드값 (URL 또는 uid)
+  streamerUid: string;     // 연결된 실제 streamer uid
+  channelName: string;
+  status: ConnectionStatus;
+  errorMsg: string;
+  chats: ChatData[];
+  searchQuery: string;
+  showSearch: boolean;
+  selectedUid: string | null;
+  selectedNickname: string;
+}
+export const MAX_TABS = 5;
+export function newTab(): Tab { ... }
+```
+
+**`src/components/TabBar.tsx` (신규)**
+- 탭마다 `●` 연결 상태 표시 (green=connected, muted=idle)
+- 채널 이름 또는 "새 탭", `max-w-28 truncate`로 오버플로우 처리
+- ✕ 닫기 버튼 (탭이 2개 이상일 때만 표시), ＋ 추가 버튼 (5개 미만일 때만 표시)
+- MenuBar 하단 배치
+
+**`src/App.tsx` 전면 재작성**
+- 단일 상태 → `tabs: Tab[]` + `activeTabId: string` 배열 상태로 전환
+- `updateTab(tabId, patch)`: 단일 업데이터 함수로 모든 탭 상태 수정 통일
+- `addTab()`, `closeTab(tabId)`: 탭 추가/삭제 (닫힌 탭이 활성 탭이면 인접 탭으로 전환)
+- `connectTab(tabId, uid)`: per-tab `listen("chat-message-{streamerUid}", ...)` 등록
+- `disconnectTab(tabId, streamerUid)`: invoke + 리스너 해제 + 탭 상태 초기화
+- `unlistenMap = useRef<Map<string, () => void>>(new Map())`: 탭별 이벤트 리스너 해제 함수 저장
+- `activeTabIdRef`: keydown 핸들러 등 closure에서 최신 activeTabId 참조용
+- DEV 스트레스 테스트: 시작 시 `targetTabId` 캡처 → 탭 전환 후에도 해당 탭에만 더미 메시지
+
+**`src-tauri/src/lib.rs` 변경**
+- `ChatState`: `Mutex<Option<AbortHandle>>` → `Mutex<HashMap<String, AbortHandle>>`
+- `.manage()`: `Mutex::new(None)` → `Mutex::new(HashMap::new())`
+- `connect_chat`: `.take()` → `.remove(&streamer_uid)` (기존 연결 중단), `.insert(streamer_uid.clone(), ...)` (새 핸들 저장)
+- `disconnect_chat`: `streamer_uid: String` 파라미터 추가, `.take()` → `.remove(&streamer_uid)`
+
+**`src-tauri/src/chat.rs` 변경**
+- `app_handle.emit("chat-message", &chat)` → `app_handle.emit(&format!("chat-message-{streamer_uid}"), &chat)`
+- `streamer_uid`는 이미 `chat_session()` 파라미터로 존재 → 변경 최소
+
+### 참고사항
+- `unlistenMap`을 `useRef<Map>` (ref of Map)으로 관리: state에 넣으면 listen 등록마다 리렌더링 발생
+- `activeTabIdRef`는 keydown 이벤트 핸들러 closure의 stale capture 방지용. `useEffect([], [])` 내 등록된 핸들러는 초기 `activeTabId` 값에 고정되므로 ref를 통해 최신값 참조 필요
+- 이벤트명 `chat-message-{uid}`: 탭이 같은 채널에 중복 연결 시 동일 이벤트를 두 탭이 모두 수신하는 문제 있음 → 현재는 connect 시 기존 워커 abort로 단일 연결 보장

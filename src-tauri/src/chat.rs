@@ -161,7 +161,7 @@ async fn chat_session(
                     for item in bdy {
                         if let Some(mut chat) = parse_chat(item, chat_type) {
                             cache_images(&mut chat, cache_dir, &http_client).await;
-                            let _ = app_handle.emit("chat-message", &chat);
+                            let _ = app_handle.emit(&format!("chat-message-{streamer_uid}"), &chat);
                             write_log(log_dir, &chat);
                         }
                     }

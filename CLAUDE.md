@@ -3,7 +3,7 @@
 Chzzk 채팅 뷰어를 Tauri(React + TypeScript + Rust)로 처음부터 구현.
 Rust와 Tauri를 학습하면서 단계적으로 진행하는 프로젝트.
 
-**현재 단계: Phase 10 완료 (Phase 11 대기 중)**
+**현재 단계: Phase 11 완료**
 
 ## 기술 스택
 
@@ -21,9 +21,17 @@ Rust와 Tauri를 학습하면서 단계적으로 진행하는 프로젝트.
 ChzzkChatTauri/
 ├── src/                      # React 프론트엔드
 │   ├── main.tsx              # React 진입점
-│   ├── App.tsx               # 루트 컴포넌트
-│   ├── components/           # UI 컴포넌트
-│   └── types/                # TypeScript 타입 정의
+│   ├── App.tsx               # 루트 컴포넌트 (탭 상태 관리)
+│   ├── components/
+│   │   ├── MenuBar.tsx       # 옵션/설정 드롭다운 (테마 토글 포함)
+│   │   ├── TabBar.tsx        # 탭 목록 + 추가/닫기 버튼
+│   │   ├── ConnectionBar.tsx # UID 입력 + 연결/해제 버튼
+│   │   ├── StatusBar.tsx     # 연결 상태 + 메시지 카운트
+│   │   ├── ChatList.tsx      # 가상 스크롤 채팅 목록
+│   │   └── ChatItem.tsx      # 채팅 아이템 (memo 적용)
+│   └── types/
+│       ├── chat.ts           # ChatData 인터페이스
+│       └── tab.ts            # Tab 인터페이스, MAX_TABS, newTab()
 ├── src-tauri/                # Rust 백엔드
 │   ├── src/
 │   │   ├── main.rs           # 진입점
@@ -50,14 +58,14 @@ async fn connect_chat(streamer_uid: String) -> Result<serde_json::Value, String>
 
 ### Backend → Frontend (emit/listen)
 ```rust
-// Rust: 채팅 메시지 전송
-app_handle.emit("chat-message", &chat_data).unwrap();
+// Rust: 탭별 채팅 메시지 전송 (streamer_uid로 이벤트 분리)
+app_handle.emit(&format!("chat-message-{streamer_uid}"), &chat_data).unwrap();
 ```
 ```typescript
-// TypeScript: 수신
+// TypeScript: 탭별 수신
 import { listen } from "@tauri-apps/api/event";
-await listen<ChatData>("chat-message", (event) => {
-  setChatList(prev => [...prev, event.payload]);
+const unlisten = await listen<ChatData>(`chat-message-${streamerUid}`, (event) => {
+  setTabs(prev => prev.map(t => t.tabId === tabId ? { ...t, chats: [...t.chats, event.payload] } : t));
 });
 ```
 
@@ -168,3 +176,8 @@ npm run tauri build  # 배포 빌드
 
 6. **이모지 메모리**: Chzzk API는 채널 이모지 전체를 매 메시지마다 전송.
    `parse_chat()`에서 실제 사용된 이모지만 필터링하여 메모리 폭증 방지.
+
+7. **탭별 이벤트 리스너**: `unlistenMap = useRef<Map<string, () => void>>` 로 탭별 해제 함수 관리.
+   탭 닫기/연결 해제 시 반드시 `unlisten()` 호출 — 누락 시 닫힌 탭에 메시지가 계속 쌓임.
+
+8. **동일 채널 중복 연결**: `connect_chat` 커맨드에서 `streamer_uid`가 이미 HashMap에 있으면 기존 워커를 abort 후 재연결. 두 탭에서 같은 채널 연결 시 두 번째 탭이 첫 번째 탭의 워커를 빼앗음.

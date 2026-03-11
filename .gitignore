@@ -12,8 +12,9 @@ dist
 dist-ssr
 *.local
 
-# Credentials
+# Credentials & personal settings
 cookies.json
+settings.json
 
 # Editor directories and files
 .vscode/*

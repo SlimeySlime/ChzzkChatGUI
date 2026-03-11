@@ -3,16 +3,16 @@ mod chat;
 mod settings;
 mod types;
 
+use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::Mutex;
 use tauri::Manager;  // get_webview_window 등 창 관리 메서드에 필요
 use types::Cookies;
 
-/// 채팅 워커 task의 AbortHandle 보관.
+/// 탭별 채팅 워커 task의 AbortHandle 보관. (streamer_uid → AbortHandle)
 /// connect_chat으로 task를 시작하고, disconnect_chat으로 중단.
-struct ChatState(Mutex<Option<tokio::task::AbortHandle>>);
-// 질문: Mutex<Option<AbortHandle>> 문법이 좀 낯선데, 설명이 필요해.
+struct ChatState(Mutex<HashMap<String, tokio::task::AbortHandle>>);
 
 /// settings.json, log/, cache/ 등 앱 파일을 읽고 쓸 디렉토리 반환.
 /// dev:  exe가 src-tauri/target/debug/ 에 있으므로 4단계 위 = 프로젝트 루트
@@ -127,15 +127,15 @@ async fn connect_chat(
         .join("cache")
         .join(&channel_name);
 
-    // 기존 채팅 워커가 있으면 먼저 중단
-    if let Some(handle) = state.0.lock().unwrap().take() {
+    // 같은 채널에 기존 연결이 있으면 먼저 중단
+    if let Some(handle) = state.0.lock().unwrap().remove(&streamer_uid) {
         handle.abort();
     }
 
     // 채팅 워커를 백그라운드 task로 실행
     let task = tokio::spawn(chat::run(
         app_handle,
-        streamer_uid,
+        streamer_uid.clone(),
         cookies.nid_aut,
         cookies.nid_ses,
         chat_channel_id.clone(),
@@ -144,7 +144,7 @@ async fn connect_chat(
         log_dir,
         cache_dir,
     ));
-    *state.0.lock().unwrap() = Some(task.abort_handle());
+    state.0.lock().unwrap().insert(streamer_uid, task.abort_handle());
 
     Ok(serde_json::json!({
         "channel_name": channel_name,
@@ -154,8 +154,8 @@ async fn connect_chat(
 
 /// 채팅 워커 중단
 #[tauri::command]
-fn disconnect_chat(state: tauri::State<'_, ChatState>) {
-    if let Some(handle) = state.0.lock().unwrap().take() {
+fn disconnect_chat(state: tauri::State<'_, ChatState>, streamer_uid: String) {
+    if let Some(handle) = state.0.lock().unwrap().remove(&streamer_uid) {
         handle.abort();
     }
 }
@@ -242,7 +242,7 @@ fn get_dummy_assets() -> serde_json::Value {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .manage(ChatState(Mutex::new(None)))
+        .manage(ChatState(Mutex::new(HashMap::new())))
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
             connect_chat,

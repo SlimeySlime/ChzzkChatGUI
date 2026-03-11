@@ -87,10 +87,10 @@
 - [x] `MenuBar.tsx` 설정 드롭다운에 다크/라이트 토글 버튼 추가
 - [x] 전체 컴포넌트 하드코딩 색상 → 테마 유틸리티 클래스 교체
 
-## Phase 11: 여러 스트리머 동시 모니터링 (탭)
-- [ ] Rust: `ChatState` → `HashMap<uid, AbortHandle>`, 이벤트명 `chat-message-{uid}` 분리
-- [ ] Frontend: `tabs[]` state, `activeTab`, 탭바 UI
-- [ ] 탭 최대 수 제한 (예: 5개), 전역 설정 공유
+## Phase 11: 여러 스트리머 동시 모니터링 (탭) ✅
+- [x] Rust: `ChatState` → `HashMap<uid, AbortHandle>`, 이벤트명 `chat-message-{uid}` 분리
+- [x] Frontend: `tabs[]` state, `activeTab`, 탭바 UI
+- [x] 탭 최대 5개 제한, 전역 설정 공유
 
 ## 나중에 (배포, 최후순위)
 - [ ] 자동 업데이트 (tauri-plugin-updater + GitHub Releases)
