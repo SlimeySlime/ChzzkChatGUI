@@ -27,17 +27,17 @@ export default function ChatList({
   const isProgrammaticRef = useRef(false);
 
   // 필터 적용: donationOnly → selectedUid(최근 500건) → searchQuery
-  let visible = donationOnly
+  let visible_chats = donationOnly
     ? chats.filter((c) => c.chat_type === "후원")
     : chats;
 
   if (selectedUid) {
-    visible = visible.filter((c) => c.uid === selectedUid).slice(-500);
+    visible_chats = visible_chats.filter((c) => c.uid === selectedUid).slice(-500);
   }
 
   if (searchQuery) {
     const q = searchQuery.toLowerCase();
-    visible = visible.filter(
+    visible_chats = visible_chats.filter(
       (c) =>
         c.nickname.toLowerCase().includes(q) ||
         c.message.toLowerCase().includes(q)
@@ -45,7 +45,7 @@ export default function ChatList({
   }
 
   const virtualizer = useVirtualizer({
-    count: visible.length,
+    count: visible_chats.length,
     getScrollElement: () => containerRef.current,
     // 채팅 아이템 기본 높이 추정값 (실제 높이는 measureElement가 측정)
     estimateSize: () => 28,
@@ -54,15 +54,17 @@ export default function ChatList({
   });
 
   // 새 메시지 도착 시 최하단 자동 스크롤
-  // isProgrammaticRef: scrollToIndex가 유발하는 scroll 이벤트가
-  //                    atBottomRef를 잘못 변경하지 않도록 보호
+  // isProgrammaticRef: 
+  // scrollToIndex가 유발하는 scroll 이벤트가
+  // atBottomRef를 잘못 변경하지 않도록 보호
   useEffect(() => {
-    if (!atBottomRef.current || visible.length === 0) return;
+    if (!atBottomRef.current || visible_chats.length === 0) return;
     isProgrammaticRef.current = true;
-    virtualizer.scrollToIndex(visible.length - 1, { behavior: "auto" });
+    virtualizer.scrollToIndex(visible_chats.length - 1, { behavior: "auto" });
+    // 질문: why using setTimeout?
     setTimeout(() => { isProgrammaticRef.current = false; }, 0);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visible.length]);
+  }, [visible_chats.length]);
 
   const handleScroll = () => {
     if (isProgrammaticRef.current) return;
@@ -100,7 +102,8 @@ export default function ChatList({
             }}
           >
             <ChatItem
-              chat={visible[virtualItem.index]}
+              // virtualItem.index가 중요 
+              chat={visible_chats[virtualItem.index]}
               showTimestamp={showTimestamp}
               showBadges={showBadges}
               onNicknameClick={onNicknameClick}

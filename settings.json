@@ -2,5 +2,10 @@
   "font_size": 11,
   "show_timestamp": true,
   "show_badges": true,
-  "donation_only": false
+  "donation_only": false,
+  "window_width": 595,
+  "window_height": 810,
+  "window_x": 0,
+  "window_y": 0,
+  "theme": "dark"
 }

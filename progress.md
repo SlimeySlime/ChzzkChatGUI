@@ -528,3 +528,89 @@ fn app_dir() -> Result<PathBuf, String> {
 | Windows | ✅ | ✅ |
 | Linux X11 | ✅ | ✅ |
 | Linux Wayland | ✅ | ❌ (compositor가 배치 결정, 저장은 됨) |
+
+---
+
+## Phase 10: 다크/라이트 테마 전환 ✅
+
+### 설계 결정
+
+**Tailwind `dark:` prefix 미사용** → CSS 변수 + `data-theme` 속성 방식 채택.
+
+이유:
+- `dark:` prefix는 dark/light 2가지만 지원. 향후 커스텀 테마 확장 시 구조 재설계 필요.
+- CSS 변수 방식은 `[data-theme="xxx"]` 셀렉터만 추가하면 테마 무한 확장 가능.
+- 컴포넌트 JSX에 `dark:` prefix 없이 단일 클래스명(`bg-theme-primary`)만 쓰면 됨.
+
+### 구현 내용
+
+**`src/index.css`**
+
+테마별 CSS 변수 정의:
+```css
+[data-theme="dark"]  { --bg-primary: #171717; --text-primary: #ffffff; ... }
+[data-theme="light"] { --bg-primary: #f0f0f0; --text-primary: #0a0a0a; ... }
+```
+
+변수 목록:
+| 변수 | 용도 |
+|------|------|
+| `--bg-primary` | 메인 배경 (neutral-900 계열) |
+| `--bg-secondary` | 서브 배경 (neutral-800 계열) |
+| `--bg-tertiary` | 3차 배경 (neutral-700 계열, hover 대상) |
+| `--bg-deep` | 가장 어두운 배경 (neutral-950 계열) |
+| `--text-primary` | 주 텍스트 |
+| `--text-secondary` | 보조 텍스트 |
+| `--text-muted` | 흐린 텍스트 (타임스탬프, 카운트 등) |
+| `--border` | 경계선 |
+| `--scrollbar` / `--scrollbar-hover` | 스크롤바 색상 |
+| `--donation-bg` | 후원 메시지 배경 |
+
+Tailwind v4 `@utility` 디렉티브로 유틸리티 클래스 등록:
+```css
+@utility bg-theme-primary   { background-color: var(--bg-primary); }
+@utility text-theme-muted   { color: var(--text-muted); }
+@utility border-theme       { border-color: var(--border); }
+@utility placeholder-theme-muted { &::placeholder { color: var(--text-muted); } }
+```
+→ `hover:bg-theme-tertiary`, `focus:border-theme` 등 Tailwind 변형 자동 지원
+
+**`src-tauri/src/settings.rs`**
+- `theme: String` 필드 추가 (기본값: `"dark"`)
+- `#[serde(default = "default_theme")]` 필수 — 기존 settings.json 호환성 유지
+
+**`src/App.tsx`**
+- `theme` state 추가 (기본값 `"dark"`)
+- 설정 로드 시 `s.theme ?? "dark"` 적용
+- `useEffect([theme])`: `document.documentElement.setAttribute("data-theme", theme)` — DOM에 반영
+- `settingsRef`에 `theme` 필드 추가 → `applySettings({ theme: t })` 로 저장
+- MenuBar에 `theme`, `onThemeChange` props 전달
+
+**`src/components/MenuBar.tsx`**
+- `theme: string`, `onThemeChange: (theme: string) => void` props 추가
+- 설정 드롭다운 하단에 토글 버튼:
+  - dark일 때 → "라이트 모드" 표시
+  - light일 때 → "다크 모드" 표시
+
+**전체 컴포넌트 색상 교체**
+
+| 기존 Tailwind 클래스 | 교체 후 |
+|---------------------|---------|
+| `bg-neutral-900/950` | `bg-theme-primary` / `bg-theme-deep` |
+| `bg-neutral-800` | `bg-theme-secondary` |
+| `bg-neutral-700` | `bg-theme-tertiary` |
+| `text-white`, `text-neutral-100` | `text-theme-primary` |
+| `text-neutral-200/300` | `text-theme-secondary` |
+| `text-neutral-400/500` | `text-theme-muted` |
+| `border-neutral-700/600` | `border-theme` |
+| `hover:bg-neutral-700/600` | `hover:bg-theme-tertiary` |
+
+고정 색상 (테마 미적용):
+- 연결 상태: `text-green-400`, `text-yellow-400`, `text-red-400` (시맨틱 색상)
+- 연결/해제 버튼: `bg-green-700`, `bg-red-600`
+- 에러 메시지: `bg-red-950 text-red-400`
+
+### 참고사항
+- `[data-theme]` 셀렉터는 `:root` 변수보다 specificity가 높아 기본값 override 필요 없음
+- `@utility`로 정의한 커스텀 클래스는 Tailwind v4에서 `hover:`, `focus:` 등 변형 자동 지원
+- `data-theme`은 `<html>` 요소에 설정 — 하위 모든 CSS 변수가 cascading으로 적용됨

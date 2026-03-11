@@ -3,7 +3,7 @@
 Chzzk 채팅 뷰어를 Tauri(React + TypeScript + Rust)로 처음부터 구현.
 Rust와 Tauri를 학습하면서 단계적으로 진행하는 프로젝트.
 
-**현재 단계: Phase 9 완료 (Phase 10 대기 중)**
+**현재 단계: Phase 10 완료 (Phase 11 대기 중)**
 
 ## 기술 스택
 
@@ -92,9 +92,34 @@ pub struct Settings {
     pub window_height: u32,       // 기본값: 600
     pub window_x: Option<i32>,    // 기본값: None
     pub window_y: Option<i32>,    // 기본값: None
+    pub theme: String,            // 기본값: "dark" | "light"
 }
 ```
 새 필드 추가 시 `#[serde(default)]` 필수 — 없으면 기존 settings.json 역직렬화 실패 시 전체 초기화됨.
+
+## 테마 시스템
+
+CSS 변수 + `data-theme` 속성 방식. Tailwind `dark:` prefix 미사용 (다중 테마 확장성).
+
+```css
+/* index.css */
+[data-theme="dark"]  { --bg-primary: #171717; ... }
+[data-theme="light"] { --bg-primary: #f0f0f0; ... }
+
+@utility bg-theme-primary   { background-color: var(--bg-primary); }
+@utility text-theme-primary { color: var(--text-primary); }
+/* ... */
+```
+
+```typescript
+// App.tsx: theme state 변경 시 DOM 반영
+useEffect(() => {
+  document.documentElement.setAttribute("data-theme", theme);
+}, [theme]);
+```
+
+- 테마 전환: 설정 메뉴 → "라이트 모드 / 다크 모드" 토글
+- 상태 색상(green/yellow/red)과 연결 버튼(red/green)은 시맨틱 색상이므로 테마 미적용
 
 ## app_dir() — dev/prod 경로 분기
 

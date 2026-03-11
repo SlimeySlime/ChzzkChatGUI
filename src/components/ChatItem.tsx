@@ -49,11 +49,11 @@ export default memo(function ChatItem({ chat, showTimestamp, showBadges, onNickn
   return (
     <div
       className="flex flex-wrap items-baseline gap-x-1 px-2 py-0.5 rounded chat-text"
-      style={isDonation ? { background: "rgba(255, 204, 0, 0.12)" } : undefined}
+      style={isDonation ? { background: "var(--donation-bg)" } : undefined}
     >
       {/* 타임스탬프 */}
       {showTimestamp && (
-        <span className="text-neutral-500 shrink-0">[{chat.time}]</span>
+        <span className="text-theme-muted shrink-0">[{chat.time}]</span>
       )}
 
       {/* 배지 (로컬 캐시 경로 or URL) */}
@@ -75,7 +75,7 @@ export default memo(function ChatItem({ chat, showTimestamp, showBadges, onNickn
       </span>
 
       {/* 메시지 - {:name:} 이모지 치환 */}
-      <span className="text-neutral-100 break-all">
+      <span className="text-theme-primary break-all">
         : {renderMessage(chat.message, chat.emojis)}
       </span>
     </div>

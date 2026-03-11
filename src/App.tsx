@@ -75,6 +75,7 @@ export default function App() {
   const [showTimestamp, setShowTimestamp] = useState(true);
   const [showBadges, setShowBadges] = useState(true);
   const [fontSize, setFontSize] = useState(13);
+  const [theme, setTheme] = useState("dark");
 
   // 검색 상태
   const [searchQuery, setSearchQuery] = useState("");
@@ -85,14 +86,14 @@ export default function App() {
   const [selectedNickname, setSelectedNickname] = useState("");
 
   // 최신 설정값을 항상 참조하기 위한 ref (saveSettings에서 stale closure 방지)
-  const settingsRef = useRef({ font_size: 13, show_timestamp: true, show_badges: true, donation_only: false });
+  const settingsRef = useRef({ font_size: 13, show_timestamp: true, show_badges: true, donation_only: false, theme: "dark" });
 
   const isConnected = status === "connected";
   const isConnecting = status === "connecting";
 
   // 앱 시작 시 settings.json 로드 (1회)
   useEffect(() => {
-    invoke<{ font_size: number; show_timestamp: boolean; show_badges: boolean; donation_only: boolean }>(
+    invoke<{ font_size: number; show_timestamp: boolean; show_badges: boolean; donation_only: boolean; theme: string }>(
       "get_settings"
     ).then((s) => {
       settingsRef.current = s;
@@ -100,8 +101,14 @@ export default function App() {
       setShowTimestamp(s.show_timestamp);
       setShowBadges(s.show_badges);
       setDonationOnly(s.donation_only);
+      setTheme(s.theme ?? "dark");
     });
   }, []);
+
+  // 테마 변경 시 HTML 요소에 data-theme 속성 적용
+  useEffect(() => {
+    document.documentElement.setAttribute("data-theme", theme);
+  }, [theme]);
 
   // 더미 테스트용 에셋 로드 (1회): 실제 캐시 이미지 + 로그 닉네임/메시지
   useEffect(() => {
@@ -227,12 +234,13 @@ export default function App() {
   };
 
   return (
-    <div className="h-screen flex flex-col bg-neutral-900 text-white overflow-hidden">
+    <div className="h-screen flex flex-col bg-theme-primary text-theme-primary overflow-hidden">
       <MenuBar
         donationOnly={donationOnly}
         showTimestamp={showTimestamp}
         showBadges={showBadges}
         fontSize={fontSize}
+        theme={theme}
         onToggleDonationOnly={() => {
           const next = !donationOnly;
           setDonationOnly(next);
@@ -252,6 +260,10 @@ export default function App() {
           setFontSize(size);
           applySettings({ font_size: size });
         }}
+        onThemeChange={(t) => {
+          setTheme(t);
+          applySettings({ theme: t });
+        }}
         onClearChat={() => setChats([])}
       />
       <ConnectionBar
@@ -270,7 +282,7 @@ export default function App() {
 
       {/* 검색 바 - Ctrl+F로 열기/닫기 */}
       {showSearch && (
-        <div className="px-2 py-1 bg-neutral-800 border-b border-neutral-700 flex gap-2">
+        <div className="px-2 py-1 bg-theme-secondary border-b border-theme flex gap-2">
           <input
             autoFocus
             value={searchQuery}
@@ -279,24 +291,24 @@ export default function App() {
               if (e.key === "Escape") { setShowSearch(false); setSearchQuery(""); }
             }}
             placeholder="닉네임 / 메시지 검색..."
-            className="flex-1 bg-neutral-700 text-white text-xs px-2 py-1 rounded outline-none"
+            className="flex-1 bg-theme-tertiary text-theme-primary placeholder-theme-muted text-xs px-2 py-1 rounded outline-none"
           />
           <button
             onClick={() => { setShowSearch(false); setSearchQuery(""); }}
-            className="text-neutral-400 hover:text-white text-xs"
+            className="text-theme-muted hover:text-theme-primary text-xs"
           >✕</button>
         </div>
       )}
 
       {/* 유저 필터 바 - 닉네임 클릭 시 표시 */}
       {selectedUid && (
-        <div className="px-2 py-1 bg-neutral-700 border-b border-neutral-600 flex items-center text-xs">
-          <span className="text-neutral-300">
-            👤 <span className="text-white">{selectedNickname}</span> 메시지 내역
+        <div className="px-2 py-1 bg-theme-tertiary border-b border-theme flex items-center text-xs">
+          <span className="text-theme-secondary">
+            👤 <span className="text-theme-primary">{selectedNickname}</span> 메시지 내역
           </span>
           <button
             onClick={() => setSelectedUid(null)}
-            className="ml-auto text-neutral-400 hover:text-white"
+            className="ml-auto text-theme-muted hover:text-theme-primary"
           >✕</button>
         </div>
       )}
@@ -312,16 +324,16 @@ export default function App() {
       />
 
       {/* 개발용: 더미 메시지 추가 버튼 */}
-      <div className="px-2 py-1 bg-neutral-950 border-t border-neutral-800 flex gap-3">
+      <div className="px-2 py-1 bg-theme-deep border-t border-theme flex gap-3">
         <button
           onClick={addDummyMessage}
-          className="text-xs text-neutral-500 hover:text-neutral-300"
+          className="text-xs text-theme-muted hover:text-theme-secondary"
         >
           [DEV] 더미 1건
         </button>
         <button
           onClick={toggleStressTest}
-          className={`text-xs ${isStressTesting ? "text-red-400 hover:text-red-300" : "text-neutral-500 hover:text-neutral-300"}`}
+          className={`text-xs ${isStressTesting ? "text-red-400 hover:text-red-300" : "text-theme-muted hover:text-theme-secondary"}`}
         >
           [DEV] 스트레스 {isStressTesting ? "중지 ■" : "시작 ▶ (100건/초)"}
         </button>

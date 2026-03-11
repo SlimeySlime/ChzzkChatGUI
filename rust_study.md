@@ -22,6 +22,7 @@ Java/JS/Python/C# 경험자가 Rust 입문할 때 자주 막히는 포인트를 
 14. [move 클로저 — 소유권 캡처](#14-move-클로저--소유권-캡처)
 15. [#[cfg(debug_assertions)] — 컴파일 타임 분기](#15-cfgdebug_assertions--컴파일-타임-분기)
 16. [? 연산자 — 에러 전파](#16--연산자--에러-전파)
+17. [가상 스크롤 (@tanstack/react-virtual)](#17-가상-스크롤-tanstackreact-virtual)
 
 ---
 
@@ -630,6 +631,128 @@ let path = app_dir()?.join("cookies.json");         // 실패 시 return Err(...
 let content = fs::read_to_string(&path)?;            // 실패 시 return Err(...)
 serde_json::from_str(&content).map_err(|e| e.to_string())  // 마지막은 ? 없이 반환
 ```
+
+---
+
+## 17. 가상 스크롤 (`@tanstack/react-virtual`)
+
+```tsx
+// ChatList.tsx
+const virtualizer = useVirtualizer({
+  count: visible.length,
+  getScrollElement: () => containerRef.current,
+  estimateSize: () => 28,
+  overscan: 10,
+});
+```
+
+### 왜 가상 스크롤이 필요한가?
+
+일반 렌더링은 항목 수만큼 DOM 노드가 생긴다:
+```
+채팅 10,000건 → <div> 10,000개 → <img> ~15,000개 (배지 포함)
+→ Chromium 이미지 디코드 캐시가 누적 → 수 GB 메모리 증가
+```
+
+가상 스크롤은 **뷰포트에 보이는 항목만 DOM에 렌더링**한다:
+```
+채팅 10,000건이지만 DOM에는 ~30~50개만 존재
+→ 뷰포트 밖 항목은 DOM에서 제거 → 이미지 캐시 해제 가능
+```
+
+### 동작 원리
+
+```
+┌──────────────────────────────┐ ← 스크롤 컨테이너 (overflow-y: auto)
+│  position: relative          │
+│  height: 전체 항목 합산 높이  │ ← 스크롤바가 전체 길이를 정확히 표시
+│                              │
+│  ┌────────────────────────┐  │
+│  │ item (translateY: 0px) │  │ ← DOM에 실제 존재하는 항목들
+│  ├────────────────────────┤  │   (뷰포트 근처만)
+│  │ item (translateY: 28px)│  │
+│  └────────────────────────┘  │
+│                              │
+│   ... (DOM에 없음, 공간만)   │
+└──────────────────────────────┘
+```
+
+각 항목은 `position: absolute` + `transform: translateY(offset)` 으로 정확한 위치에 배치된다. DOM 노드는 없어도 스크롤 높이는 유지되므로 스크롤바가 자연스럽게 동작한다.
+
+### 코드 구조 분해
+
+```tsx
+// ① 스크롤 컨테이너 ref
+const containerRef = useRef<HTMLDivElement>(null);
+
+// ② virtualizer 생성
+const virtualizer = useVirtualizer({
+  count: visible.length,           // 전체 항목 수 (DOM 수 아님)
+  getScrollElement: () => containerRef.current,  // 스크롤 감지할 요소
+  estimateSize: () => 28,          // 항목 높이 추정값 (실제값은 측정으로 보정)
+  overscan: 10,                    // 뷰포트 위아래 10개 추가 렌더링 (빠른 스크롤 공백 방지)
+});
+
+// ③ 전체 높이 컨테이너 (스크롤바용)
+<div style={{ height: `${virtualizer.getTotalSize()}px`, position: "relative" }}>
+
+  // ④ 실제 렌더링: 뷰포트 근처 항목만
+  {virtualizer.getVirtualItems().map((virtualItem) => (
+    <div
+      key={virtualItem.key}
+      data-index={virtualItem.index}
+      ref={virtualizer.measureElement}   // 실제 높이 측정 → estimateSize 오차 보정
+      style={{
+        position: "absolute",
+        top: 0,
+        transform: `translateY(${virtualItem.start}px)`,  // 위치 지정
+      }}
+    >
+      <ChatItem chat={visible[virtualItem.index]} ... />
+    </div>
+  ))}
+</div>
+```
+
+### 자동 스크롤과 `isProgrammaticRef`
+
+```tsx
+// 새 메시지 도착 시 맨 아래로 스크롤
+useEffect(() => {
+  if (!atBottomRef.current || visible.length === 0) return;
+
+  isProgrammaticRef.current = true;                          // ← 플래그 ON
+  virtualizer.scrollToIndex(visible.length - 1, { behavior: "auto" });
+  setTimeout(() => { isProgrammaticRef.current = false; }, 0); // ← 플래그 OFF
+}, [visible.length]);
+
+const handleScroll = () => {
+  if (isProgrammaticRef.current) return;  // ← 코드가 스크롤한 경우 무시
+  const el = containerRef.current;
+  atBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 50;
+};
+```
+
+**왜 `isProgrammaticRef`가 필요한가?**
+
+`scrollToIndex()`가 스크롤을 이동시키면 브라우저가 `scroll` 이벤트를 발생시킨다.
+`handleScroll`이 이 이벤트를 받아 `atBottomRef`를 계산하는데, 레이아웃 반영 전이라면
+"아직 맨 아래가 아님"으로 잘못 판정 → `atBottomRef = false` → 다음 메시지부터 자동 스크롤 중단.
+
+플래그로 코드가 유발한 scroll 이벤트를 무시하면 이 오판을 막을 수 있다.
+
+### `React.memo`와의 조합
+
+```tsx
+// ChatItem.tsx
+export default memo(function ChatItem({ chat, showTimestamp, showBadges, ... }) {
+  ...
+});
+```
+
+가상 스크롤로 새 메시지가 추가되면 `visible` 배열이 바뀌어 `ChatList`가 리렌더된다.
+`memo` 없이는 뷰포트에 보이는 모든 ChatItem이 매번 재렌더된다.
+`memo`를 쓰면 **props가 바뀐 항목만** 재렌더 → 새로 추가된 항목만 렌더링.
 
 ---
 

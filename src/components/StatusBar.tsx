@@ -22,12 +22,12 @@ const STATUS_COLOR: Record<ConnectionStatus, string> = {
 
 export default function StatusBar({ status, channelName, count }: StatusBarProps) {
   return (
-    <div className="flex items-center justify-between px-2 py-0.5 bg-neutral-900 border-b border-neutral-700 text-xs">
+    <div className="flex items-center justify-between px-2 py-0.5 bg-theme-primary border-b border-theme text-xs">
       <span className={STATUS_COLOR[status]}>
         {STATUS_LABEL[status]}
         {status === "connected" && channelName && ` — ${channelName}`}
       </span>
-      <span className="text-neutral-500">{count.toLocaleString()}건</span>
+      <span className="text-theme-muted">{count.toLocaleString()}건</span>
     </div>
   );
 }

@@ -81,10 +81,11 @@
 - [x] 빌드 `.exe` 실행 시 log 폴더 잘못된 경로 버그 수정 (`cfg!(debug_assertions)` 분기)
 - [x] 창 크기·위치를 `tauri-plugin-window-state` 대신 `settings.json`으로 통합 관리
 
-## Phase 10: 다크/라이트 테마 전환
-- [ ] Tailwind `dark:` prefix + `<html class="dark">` 토글
-- [ ] `Settings`에 `theme` 필드 추가 및 복원
-- [ ] MenuBar 설정 드롭다운에 전환 버튼 추가
+## Phase 10: 다크/라이트 테마 전환 ✅
+- [x] CSS 변수 + `data-theme` 속성 기반 테마 시스템 (`index.css`)
+- [x] `settings.rs`: `theme` 필드 추가, `App.tsx`: 로드/저장 연동
+- [x] `MenuBar.tsx` 설정 드롭다운에 다크/라이트 토글 버튼 추가
+- [x] 전체 컴포넌트 하드코딩 색상 → 테마 유틸리티 클래스 교체
 
 ## Phase 11: 여러 스트리머 동시 모니터링 (탭)
 - [ ] Rust: `ChatState` → `HashMap<uid, AbortHandle>`, 이벤트명 `chat-message-{uid}` 분리
@@ -94,3 +95,7 @@
 ## 나중에 (배포, 최후순위)
 - [ ] 자동 업데이트 (tauri-plugin-updater + GitHub Releases)
 - [ ] GitHub Actions CI/CD (.deb, .exe 자동 빌드)
+
+
+### Study on code (on rust_study.md)
+- [x] 가상스크롤이 어떻게 구현되어있는지 설명해줘

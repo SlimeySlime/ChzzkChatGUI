@@ -5,6 +5,7 @@ fn default_font_size() -> u32 { 13 }
 fn default_bool_true() -> bool { true }
 fn default_window_width() -> u32 { 800 }
 fn default_window_height() -> u32 { 600 }
+fn default_theme() -> String { "dark".into() }
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct Settings {
@@ -28,6 +29,9 @@ pub struct Settings {
     pub window_x: Option<i32>,
     #[serde(default)]
     pub window_y: Option<i32>,
+
+    #[serde(default = "default_theme")]
+    pub theme: String,
 }
 
 impl Default for Settings {
@@ -41,6 +45,7 @@ impl Default for Settings {
             window_height: 600,
             window_x: None,
             window_y: None,
+            theme: "dark".into(),
         }
     }
 }
