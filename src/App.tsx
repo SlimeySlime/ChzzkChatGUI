@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { check } from "@tauri-apps/plugin-updater";
+import { relaunch } from "@tauri-apps/plugin-process";
 import { ChatData } from "./types/chat";
 import { Tab, MAX_TABS, newTab } from "./types/tab";
 import MenuBar from "./components/MenuBar";
@@ -83,7 +85,20 @@ export default function App() {
   const stressIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [isStressTesting, setIsStressTesting] = useState(false);
 
+  // 업데이터
+  const [updateAvailable, setUpdateAvailable] = useState<{ version: string; body: string | null | undefined } | null>(null);
+  const [isUpdating, setIsUpdating] = useState(false);
+
   // ── 초기화 useEffect ───────────────────────────────────────────────────────
+
+  // 업데이트 체크 (앱 시작 시 1회)
+  useEffect(() => {
+    check().then((update) => {
+      if (update?.available) {
+        setUpdateAvailable({ version: update.version, body: update.body });
+      }
+    }).catch((_e: unknown) => {}); // 오프라인/실패 시 무시
+  }, []);
 
   // 설정 로드
   useEffect(() => {
@@ -293,6 +308,34 @@ export default function App() {
       {activeTab.errorMsg && (
         <div className="px-2 py-1 text-xs text-red-400 bg-red-950 border-b border-red-800 break-all">
           {activeTab.errorMsg}
+        </div>
+      )}
+
+      {/* 업데이트 알림 */}
+      {updateAvailable && (
+        <div className="px-2 py-1 text-xs bg-blue-950 border-b border-blue-700 flex items-center gap-2">
+          <span className="text-blue-300">
+            새 버전 {updateAvailable.version} 사용 가능
+          </span>
+          <button
+            onClick={async () => {
+              if (isUpdating) return;
+              setIsUpdating(true);
+              const update = await check();
+              if (update?.available) {
+                await update.downloadAndInstall();
+                await relaunch();
+              }
+            }}
+            disabled={isUpdating}
+            className="ml-auto px-2 py-0.5 bg-blue-700 hover:bg-blue-600 text-white rounded disabled:opacity-50"
+          >
+            {isUpdating ? "업데이트 중..." : "지금 업데이트"}
+          </button>
+          <button
+            onClick={() => setUpdateAvailable(null)}
+            className="text-blue-400 hover:text-blue-200"
+          >✕</button>
         </div>
       )}
 
