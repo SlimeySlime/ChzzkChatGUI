@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { getVersion } from "@tauri-apps/api/app";
 // getCurrentWindow().hide() 대신 hide_to_tray 커맨드 사용:
 // 직접 hide()하면 창 상태(크기·위치) 저장 없이 숨겨짐 → Rust 커맨드에서 저장 후 숨김
 
@@ -31,7 +32,12 @@ export default function MenuBar({
   onClearChat,
 }: MenuBarProps) {
   const [openMenu, setOpenMenu] = useState<string | null>(null);
+  const [appVersion, setAppVersion] = useState<string>("");
   const menuBarRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    getVersion().then(setAppVersion);
+  }, []);
 
   // 메뉴바 외부 클릭 시 드롭다운 닫기
   useEffect(() => {
@@ -132,6 +138,26 @@ export default function MenuBar({
             >
               &nbsp;&nbsp;&nbsp;{theme === "dark" ? "라이트 모드" : "다크 모드"}
             </button>
+          </div>
+        )}
+      </div>
+
+      {/* 도움말 */}
+      <div className="menu-dropdown">
+        <button
+          onClick={() => toggle("help")}
+          className="px-3 py-1.5 hover:bg-theme-tertiary text-theme-secondary"
+        >
+          도움말
+        </button>
+        {openMenu === "help" && (
+          <div className="menu-panel bg-theme-secondary border border-theme rounded shadow-lg">
+            <div className="px-4 py-2 text-theme-muted whitespace-nowrap text-xs">
+              Chzzk Chat Log
+            </div>
+            <div className="px-4 py-1.5 text-theme-secondary whitespace-nowrap">
+              버전 {appVersion || "..."}
+            </div>
           </div>
         )}
       </div>

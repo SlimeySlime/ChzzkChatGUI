@@ -95,10 +95,13 @@
 ## Phase 12: 배포 자동화 🚧 진행 중
 - [x] GitHub Actions 워크플로우 (`.github/workflows/release.yml`)
 - [x] `tauri-plugin-updater` + `tauri-plugin-process` 추가
-- [x] ed25519 서명 키 생성, GitHub Secrets 등록
+- [x] ed25519 서명 키 재생성 (비밀번호 포함), GitHub Secrets 업데이트
 - [x] 앱 내 업데이트 배너 UI (App.tsx)
-- [x] v0.2.0 첫 릴리즈 빌드 확인 (GitHub Actions)
-- [ ] v0.3.0 배포 후 실제 자동 업데이트 동작 검증
+- [x] v0.4.0 빌드 — `.sig` + `latest.json` 생성 확인 예정
+- [ ] v0.5.0 배포 후 v0.4.0 앱에서 자동 업데이트 동작 검증
+
+## Phase 13: 앱 정보 표시 🚧 진행 중
+- [ ] 도움말 메뉴 → 앱 버전 표시 (`getVersion()` API)
 
 
 ### Study on code (on rust_study.md)

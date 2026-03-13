@@ -686,14 +686,36 @@ export function newTab(): Tab { ... }
 ## Phase 12: 배포 자동화 🚧 진행 중
 
 ### 현재 상태
-- v0.2.0 빌드까지 완료. v0.3.0 배포 후 실제 자동 업데이트 동작 검증 예정.
+- v0.4.0 빌드 중 (`.sig` + `latest.json` 생성 확인 예정)
+- v0.5.0 배포 후 v0.4.0 앱에서 자동 업데이트 동작 검증 예정
+
+### 서명 키 트러블슈팅
+
+초기에 `--ci` 플래그로 생성한 키는 빈 비밀번호로 서명이 동작하지 않았음.
+→ `.sig` 파일 미생성 → `latest.json` 미생성 → 업데이터 동작 불가
+
+**해결**: `--password "PASSWORD"` 로 비밀번호를 명시해서 재생성.
+로컬 서명 테스트(`signer sign`)로 `.sig` 생성 확인 후 적용.
+
+```bash
+# 올바른 키 생성 방법
+npm run tauri -- signer generate -w ~/notes/keys/tauri_key --password "PASSWORD"
+
+# 로컬 서명 테스트
+npm run tauri -- signer sign -k "$(cat ~/notes/keys/tauri_key)" -p "PASSWORD" /tmp/test.txt
+# → /tmp/test.txt.sig 생성되면 성공
+```
+
+GitHub Secrets 필수 2개:
+- `TAURI_SIGNING_PRIVATE_KEY`: 비밀키 파일 내용
+- `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`: 키 생성 시 사용한 비밀번호
 
 ### 서명 키 구조
 
 Tauri 업데이터는 **ed25519 서명**으로 배포 파일 위변조를 검증한다.
 
 ```
-npm run tauri -- signer generate --ci
+npm run tauri -- signer generate -w <path> --password "PASSWORD"
   → 비밀키(private key): GitHub Secrets에 저장 (TAURI_SIGNING_PRIVATE_KEY)
   → 공개키(public key): tauri.conf.json plugins.updater.pubkey에 저장 (커밋 OK)
 ```
