@@ -1,6 +1,6 @@
 [package]
 name = "chzzkchattauri"
-version = "0.3.0"
+version = "0.4.0"
 description = "Chzzk Chat Logger by Tauri app"
 authors = ["slimeyslime"]
 edition = "2021"

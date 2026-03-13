@@ -94,10 +94,11 @@ export default function App() {
   // 업데이트 체크 (앱 시작 시 1회)
   useEffect(() => {
     check().then((update) => {
+      console.log("[updater] check result:", update);
       if (update?.available) {
         setUpdateAvailable({ version: update.version, body: update.body });
       }
-    }).catch((_e: unknown) => {}); // 오프라인/실패 시 무시
+    }).catch((e: unknown) => { console.error("[updater] check error:", e); });
   }, []);
 
   // 설정 로드

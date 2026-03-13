@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Chzzk Chat Log",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "identifier": "com.frogs.chzzkchat",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -38,7 +38,7 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IENGREM3QTBENUYzMTc4NkQKUldSdGVERmZEWHJjengvQjVoNE1jQitnYU56U013NXl0V1VJRm9wTWsxai9lQ2lhZkxaVVVWZW0K",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDc5QzcxQzc1QjU0REQ2QkMKUldTODFrMjFkUnpIZVU0YkVENU1GWlQzNXBaYmdQMWNweUxYZUdsd1NZL1REelBiNnNtemFNbnIK",
       "endpoints": [
         "https://github.com/SlimeySlime/ChzzkChatGUI/releases/latest/download/latest.json"
       ]
