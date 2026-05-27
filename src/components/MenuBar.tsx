@@ -15,6 +15,7 @@ interface MenuBarProps {
   onFontSizeChange: (size: number) => void;
   onThemeChange: (theme: string) => void;
   onClearChat: () => void;
+  onOpenCookieSettings: () => void;
 }
 
 export default function MenuBar({
@@ -29,6 +30,7 @@ export default function MenuBar({
   onFontSizeChange,
   onThemeChange,
   onClearChat,
+  onOpenCookieSettings,
 }: MenuBarProps) {
   const [openMenu, setOpenMenu] = useState<string | null>(null);
   const menuBarRef = useRef<HTMLDivElement>(null);
@@ -58,7 +60,7 @@ export default function MenuBar({
     <div ref={menuBarRef} className="flex bg-theme-secondary border-b border-theme text-sm select-none">
       {/* 앱 아이콘 */}
       <div className="flex items-center px-2">
-        <img src="/img/chzzk.png" className="w-4 h-4" alt="Chzzk" />
+        <img src="/img/chzzk_nobg.png" className="w-4 h-4" alt="Chzzk" />
       </div>
 
       {/* 옵션 */}
@@ -131,6 +133,14 @@ export default function MenuBar({
               className="w-full text-left px-4 py-1.5 hover:bg-theme-tertiary text-theme-secondary whitespace-nowrap"
             >
               &nbsp;&nbsp;&nbsp;{theme === "dark" ? "라이트 모드" : "다크 모드"}
+            </button>
+            <div className="border-t border-theme my-0.5" />
+            {/* 쿠키 설정 */}
+            <button
+              onClick={() => handleAction(onOpenCookieSettings)}
+              className="w-full text-left px-4 py-1.5 hover:bg-theme-tertiary text-theme-secondary whitespace-nowrap"
+            >
+              &nbsp;&nbsp;&nbsp;쿠키 설정
             </button>
           </div>
         )}

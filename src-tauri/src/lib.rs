@@ -91,6 +91,27 @@ fn hide_to_tray(app_handle: tauri::AppHandle) {
     }
 }
 
+/// 현재 저장된 쿠키 반환. 없으면 빈 문자열로 반환 (다이얼로그가 항상 열릴 수 있게).
+#[tauri::command]
+fn get_cookies() -> serde_json::Value {
+    match load_cookies() {
+        Ok(c) => serde_json::json!({ "nid_aut": c.nid_aut, "nid_ses": c.nid_ses }),
+        Err(_) => serde_json::json!({ "nid_aut": "", "nid_ses": "" }),
+    }
+}
+
+/// 쿠키를 cookies.json에 저장.
+#[tauri::command]
+fn save_cookies(nid_aut: String, nid_ses: String) -> Result<(), String> {
+    let path = app_dir()?.join("cookies.json");
+    let content = serde_json::to_string_pretty(&serde_json::json!({
+        "NID_AUT": nid_aut,
+        "NID_SES": nid_ses,
+    }))
+    .map_err(|e| e.to_string())?;
+    fs::write(&path, content).map_err(|e| e.to_string())
+}
+
 /// 연결에 필요한 정보를 조회하고 채팅 워커(WebSocket) 시작.
 /// 첨부: #[tauri::command] 는 어떤 기능이지? python의 @decorator 같은 기능인가?
 /// 첨부: 어느 fn이나 [tauri::command]를 붙이면 뭐든 invoke 할수있게 되는건가?
@@ -251,6 +272,8 @@ pub fn run() {
             disconnect_chat,
             get_settings,
             save_settings,
+            get_cookies,
+            save_cookies,
             get_dummy_assets,
             hide_to_tray,
         ])

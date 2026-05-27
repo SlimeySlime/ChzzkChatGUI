@@ -16,7 +16,7 @@ pub struct ChatData {
     pub user_role: String,       // "common_user" | "manager" | "streamer"
 }
 
-#[derive(Deserialize)]
+#[derive(Serialize, Deserialize)]
 pub struct Cookies {
     #[serde(rename = "NID_AUT")]
     pub nid_aut: String,

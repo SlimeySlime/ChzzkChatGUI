@@ -10,6 +10,7 @@ import TabBar from "./components/TabBar";
 import ConnectionBar from "./components/ConnectionBar";
 import StatusBar from "./components/StatusBar";
 import ChatList from "./components/ChatList";
+import CookieDialog from "./components/CookieDialog";
 
 // ── DEV 더미 데이터 ─────────────────────────────────────────────────────────
 
@@ -88,6 +89,9 @@ export default function App() {
   // 업데이터
   const [updateAvailable, setUpdateAvailable] = useState<{ version: string; body: string | null | undefined } | null>(null);
   const [isUpdating, setIsUpdating] = useState(false);
+
+  // 쿠키 설정 다이얼로그
+  const [showCookieDialog, setShowCookieDialog] = useState(false);
 
   // ── 초기화 useEffect ───────────────────────────────────────────────────────
 
@@ -281,6 +285,7 @@ export default function App() {
         onFontSizeChange={(size) => { setFontSize(size); applySettings({ font_size: size }); }}
         onThemeChange={(t) => { setTheme(t); applySettings({ theme: t }); }}
         onClearChat={() => updateTab(activeTabId, { chats: [] })}
+        onOpenCookieSettings={() => setShowCookieDialog(true)}
       />
 
       <TabBar
@@ -309,6 +314,11 @@ export default function App() {
         <div className="px-2 py-1 text-xs text-red-400 bg-red-950 border-b border-red-800 break-all">
           {activeTab.errorMsg}
         </div>
+      )}
+
+      {/* 쿠키 설정 다이얼로그 */}
+      {showCookieDialog && (
+        <CookieDialog onClose={() => setShowCookieDialog(false)} />
       )}
 
       {/* 업데이트 알림 */}
