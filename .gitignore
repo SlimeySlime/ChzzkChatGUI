@@ -17,6 +17,7 @@ dist-ssr
 # Credentials & personal settings
 cookies.json
 settings.json
+*.key
 
 # Editor directories and files
 .vscode/*
