@@ -66,7 +66,7 @@ export default function MenuBar({
     <div ref={menuBarRef} className="flex bg-theme-secondary border-b border-theme text-sm select-none">
       {/* 앱 아이콘 */}
       <div className="flex items-center px-2">
-        <img src="/img/chzzk_nobg.png" className="w-4 h-4" alt="Chzzk" />
+        <img src="/img/chzzk.png" className="w-4 h-4" alt="Chzzk" />
       </div>
 
       {/* 옵션 */}
