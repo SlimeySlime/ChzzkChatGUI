@@ -3,7 +3,6 @@ logs
 log
 log/*
 *.log
-CHANGELOG.md
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
@@ -29,6 +28,11 @@ settings.json
 *.njsproj
 *.sln
 *.sw?
+
+# Personal notes (tracked 제외)
+*.md
+!README.md
+!CHANGELOG.md
 
 # cache
 cache/
